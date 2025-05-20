@@ -2,23 +2,45 @@
 import { useState } from 'react';
 import axios from 'axios';
 
+// Voice options based on the latest OpenAI TTS voices
+const VOICES = [
+  { id: 'alloy', name: 'Alloy (Neutral)' },
+  { id: 'ash', name: 'Ash (Male)' },
+  { id: 'ballad', name: 'Ballad (Male)' },
+  { id: 'coral', name: 'Coral (Female)' },
+  { id: 'echo', name: 'Echo (Male)' },
+  { id: 'fable', name: 'Fable (Male)' },
+  { id: 'nova', name: 'Nova (Female)' },
+  { id: 'onyx', name: 'Onyx (Male)' },
+  { id: 'sage', name: 'Sage (Male)' },
+  { id: 'shimmer', name: 'Shimmer (Female)' }
+];
+
+// Audio format options
+const AUDIO_FORMATS = [
+  { id: 'mp3', name: 'MP3' },
+  { id: 'wav', name: 'WAV' },
+  { id: 'opus', name: 'Opus' },
+  { id: 'aac', name: 'AAC' },
+  { id: 'flac', name: 'FLAC' }
+];
+
 export default function Home() {
   const [script, setScript] = useState('');
   const [audioPath, setAudioPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hostVoice, setHostVoice] = useState('nova');
-  const [guestVoice, setGuestVoice] = useState('alloy');
   const [processingStep, setProcessingStep] = useState<string | null>(null);
   const [exampleShown, setExampleShown] = useState(false);
+  const [audioFormat, setAudioFormat] = useState('mp3');
 
-  const voices = [
-    { id: 'nova', name: 'Nova (Female)' },
-    { id: 'onyx', name: 'Onyx (Male)' },
-    { id: 'shimmer', name: 'Shimmer (Female)' },
-    { id: 'alloy', name: 'Alloy (Neutral)' },
-    { id: 'echo', name: 'Echo (Male)' }
-  ];
+  // Host settings
+  const [hostVoice, setHostVoice] = useState('nova');
+  const [hostTone, setHostTone] = useState('Speak in a clear, professional tone.');
+
+  // Guest settings
+  const [guestVoice, setGuestVoice] = useState('coral');
+  const [guestTone, setGuestTone] = useState('Speak in a natural, conversational tone.');
 
   const showExample = () => {
     const exampleScript = `Host: Welcome to our podcast on AI and technology!
@@ -69,7 +91,10 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
         body: JSON.stringify({
           text: enhancedScript,
           hostVoice,
-          guestVoice
+          hostTone,
+          guestVoice,
+          guestTone,
+          responseFormat: audioFormat
         }),
       });
 
@@ -101,10 +126,11 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6 md:p-8">
-      <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Podcast Generator</h1>
+      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6">
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">AI Podcast Generator</h1>
+        <p className="text-gray-500 mb-6">Generate podcasts using OpenAI&apos;s latest gpt-4o-mini-tts technology</p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label htmlFor="script" className="block text-sm font-medium text-gray-700 mb-1">
               Enter your podcast script
@@ -120,48 +146,102 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="hostVoice" className="block text-sm font-medium text-gray-700 mb-1">
-                Host Voice
-              </label>
-              <select
-                id="hostVoice"
-                value={hostVoice}
-                onChange={(e) => setHostVoice(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                {voices.map(voice => (
-                  <option key={`host-${voice.id}`} value={voice.id}>
-                    {voice.name}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-sm text-gray-500">
-                Used for speakers named &quot;Host&quot;
-              </p>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {/* Host Voice Settings */}
+            <div className="space-y-3 p-4 border border-gray-200 rounded-md">
+              <h3 className="font-medium text-gray-800">Host Voice</h3>
+              <div>
+                <label htmlFor="hostVoice" className="block text-sm text-gray-600">
+                  Voice
+                </label>
+                <select
+                  id="hostVoice"
+                  value={hostVoice}
+                  onChange={(e) => setHostVoice(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {VOICES.map(voice => (
+                    <option key={`host-${voice.id}`} value={voice.id}>
+                      {voice.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="hostTone" className="block text-sm text-gray-600">
+                  Speaking Tone
+                </label>
+                <textarea
+                  id="hostTone"
+                  value={hostTone}
+                  onChange={(e) => setHostTone(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Speak in a clear, professional tone."
+                  rows={2}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Example: &quot;Speak in a cheerful and positive tone.&quot; or &quot;Speak with a slight accent.&quot;
+                </p>
+              </div>
             </div>
 
-            <div>
-              <label htmlFor="guestVoice" className="block text-sm font-medium text-gray-700 mb-1">
-                Guest Voice
-              </label>
-              <select
-                id="guestVoice"
-                value={guestVoice}
-                onChange={(e) => setGuestVoice(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                {voices.map(voice => (
-                  <option key={`guest-${voice.id}`} value={voice.id}>
-                    {voice.name}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-sm text-gray-500">
-                Used for speakers named &quot;Guest&quot;
-              </p>
+            {/* Guest Voice Settings */}
+            <div className="space-y-3 p-4 border border-gray-200 rounded-md">
+              <h3 className="font-medium text-gray-800">Guest Voice</h3>
+              <div>
+                <label htmlFor="guestVoice" className="block text-sm text-gray-600">
+                  Voice
+                </label>
+                <select
+                  id="guestVoice"
+                  value={guestVoice}
+                  onChange={(e) => setGuestVoice(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {VOICES.map(voice => (
+                    <option key={`guest-${voice.id}`} value={voice.id}>
+                      {voice.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="guestTone" className="block text-sm text-gray-600">
+                  Speaking Tone
+                </label>
+                <textarea
+                  id="guestTone"
+                  value={guestTone}
+                  onChange={(e) => setGuestTone(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Speak in a natural, conversational tone."
+                  rows={2}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Example: &quot;Speak enthusiastically with occasional pauses for emphasis.&quot;
+                </p>
+              </div>
             </div>
+          </div>
+
+          <div>
+            <label htmlFor="audioFormat" className="block text-sm font-medium text-gray-700 mb-1">
+              Audio Format
+            </label>
+            <select
+              id="audioFormat"
+              value={audioFormat}
+              onChange={(e) => setAudioFormat(e.target.value)}
+              className="w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              {AUDIO_FORMATS.map(format => (
+                <option key={format.id} value={format.id}>
+                  {format.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -217,7 +297,7 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                Download MP3
+                Download Audio
               </a>
             </div>
           </div>
@@ -228,10 +308,15 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
           <ul className="list-disc pl-5 space-y-1 text-gray-600">
             <li>Start each line of dialogue with the speaker&apos;s name followed by a colon (e.g., &quot;Host: Hello everyone&quot;).</li>
             <li>For sound effects or actions, use parentheses (e.g., &quot;Host: (laughs) That&apos;s a great point!&quot;).</li>
-            <li>Speakers named &quot;Host&quot; will use the Host Voice, and speakers named &quot;Guest&quot; will use the Guest Voice.</li>
-            <li>Other speakers will use the Host Voice by default.</li>
-            <li>For best results, keep individual dialogue segments short and natural.</li>
+            <li>Speakers named &quot;Host&quot; will use the Host Voice settings.</li>
+            <li>Speakers named &quot;Guest&quot; will use the Guest Voice settings.</li>
+            <li>Any other speakers will use the Host Voice settings by default.</li>
+            <li>Use the tone instructions to customize how each voice speaks (e.g., cheerful, serious, with an accent).</li>
           </ul>
+        </div>
+
+        <div className="mt-6 text-sm text-gray-500">
+          <p>Using OpenAI&apos;s gpt-4o-mini-tts model with 10 voice options. Updated May 2025.</p>
         </div>
       </div>
     </div>

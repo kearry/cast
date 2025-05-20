@@ -25,7 +25,7 @@ function getLastTimestamp(): string | null {
 
         // Extract and sort valid timestamps
         const timestamps = files
-            .filter(file => file.endsWith('.mp3'))
+            .filter(file => file.endsWith('.mp3') || file.endsWith('.wav'))
             .map(file => file.split('_')[0])
             .filter(ts => !isNaN(Number(ts)))
             .sort((a, b) => Number(b) - Number(a));
@@ -43,22 +43,20 @@ interface PodcastState {
     audioPath: string;
 }
 
-// Function to save podcast state (placeholder - implement if needed)
+// Function to save podcast state
 function savePodcastState(state: PodcastState, timestamp: string): void {
     console.log("Podcast state:", { timestamp, ...state });
-}
-
-// Define voice mapping type
-interface VoiceMapping {
-    [speaker: string]: string;
 }
 
 export async function POST(req: NextRequest) {
     try {
         const {
             text: enhancedScript,
-            hostVoice = 'nova',  // Default host voice
-            guestVoice = 'alloy'  // Default guest voice
+            hostVoice = 'nova',
+            hostTone = '',
+            guestVoice = 'coral',
+            guestTone = '',
+            responseFormat = 'mp3'
         } = await req.json();
 
         if (!enhancedScript) {
@@ -76,38 +74,27 @@ export async function POST(req: NextRequest) {
             .filter((line: string) => line.trim() !== "" && line.includes(":"));
 
         if (dialoguePieces.length === 0) {
-            dialoguePieces.push(`Narrator: ${enhancedScript}`);
+            dialoguePieces.push(`Host: ${enhancedScript}`);
         }
-
-        // Function to determine speaker category (host vs guest)
-        const determineVoice = (speaker: string): string => {
-            const speakerLower = speaker.trim().toLowerCase();
-
-            // Default voice mapping
-            if (speakerLower === 'host' || speakerLower.includes('host')) {
-                return hostVoice;
-            } else if (speakerLower === 'guest' || speakerLower.includes('guest')) {
-                return guestVoice;
-            } else if (speakerLower === 'narrator') {
-                return 'echo'; // Narrator always uses echo
-            } else {
-                // For any other speakers
-                return hostVoice; // Default to host voice
-            }
-        };
 
         const generateAudioSegment = async (piece: string): Promise<Buffer> => {
             const [speaker, ...textParts] = piece.split(":");
             const text = textParts.join(":").trim().replace(/^\*\*\s+/, "");
 
-            // Get the appropriate voice for this speaker
-            const voiceToUse = determineVoice(speaker);
+            // Determine if this is a host or guest based on the speaker name
+            const isGuest = speaker.trim().toLowerCase().includes('guest');
 
-            // Use OpenAI TTS
+            // Use the appropriate voice and tone based on speaker
+            const voice = isGuest ? guestVoice : hostVoice;
+            const toneInstruction = isGuest ? guestTone : hostTone;
+
+            // Use OpenAI TTS with the new model and instructions parameter
             const openaiResponse = await openai.audio.speech.create({
-                model: "tts-1",
-                voice: voiceToUse,
+                model: "gpt-4o-mini-tts",
+                voice: voice,
                 input: text,
+                instructions: toneInstruction, // Use the instructions parameter for tone
+                response_format: responseFormat as 'mp3' | 'wav' | 'opus' | 'aac' | 'flac',
             });
 
             const arrayBuffer = await openaiResponse.arrayBuffer();
@@ -123,20 +110,22 @@ export async function POST(req: NextRequest) {
         // Ensure directory exists and save the audio file
         const generatedPodcastDir = path.join(process.cwd(), 'public', 'generated_podcasts');
         fs.mkdirSync(generatedPodcastDir, { recursive: true });
-        const audioFilePath = path.join(generatedPodcastDir, `${timestamp}_combined.mp3`);
+
+        const fileExtension = responseFormat === 'wav' ? 'wav' : 'mp3'; // Default to mp3 for other formats for simplicity
+        const audioFilePath = path.join(generatedPodcastDir, `${timestamp}_combined.${fileExtension}`);
         fs.writeFileSync(audioFilePath, combinedAudio);
 
         // Save podcast state
         savePodcastState({
             script: enhancedScript,
-            audioPath: `/generated_podcasts/${timestamp}_combined.mp3`
+            audioPath: `/generated_podcasts/${timestamp}_combined.${fileExtension}`
         }, timestamp);
 
         return new Response(JSON.stringify({
             message: "Podcast created successfully",
             task_id: timestamp,
             script: enhancedScript,
-            audioPath: `/generated_podcasts/${timestamp}_combined.mp3`
+            audioPath: `/generated_podcasts/${timestamp}_combined.${fileExtension}`
         }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }
