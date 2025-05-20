@@ -1,0 +1,34 @@
+{
+  "name": "my-podcaster-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@google-cloud/text-to-speech": "^5.5.0",
+    "@types/node-fetch": "^2.6.11",
+    "@types/pdf-parse": "^1.1.4",
+    "axios": "^1.9.0",
+    "multer": "^1.4.5-lts.1",
+    "next": "14.2.15",
+    "node-fetch": "^3.3.2",
+    "pdf-parse": "^1.1.1",
+    "react": "^18",
+    "react-dom": "^18",
+    "spacy": "^0.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "18.3.11",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.15",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "5.6.3"
+  }
+}
