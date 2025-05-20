@@ -4,20 +4,48 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
-import textToSpeech from '@google-cloud/text-to-speech';
 
-// Initialize OpenAI client *outside* the POST handler (more efficient)
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Fix: Import Google TTS properly
+import * as googleTTS from '@google-cloud/text-to-speech';
+const TextToSpeechClient = googleTTS.v1.TextToSpeechClient;
 
-// Initialize Google Cloud Text-to-Speech client
-const googleTTS = new textToSpeech.TextToSpeechClient({
-    credentials: JSON.parse(fs.readFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS!, 'utf8')), // Or provide path to credentials file.
+// Initialize OpenAI client
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
 });
+
+// Initialize Google Cloud Text-to-Speech client with safer initialization
+let googleTTSClient: googleTTS.v1.TextToSpeechClient | null = null;
+try {
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+        // Try to read credentials file if path is provided
+        if (fs.existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
+            googleTTSClient = new TextToSpeechClient({
+                credentials: JSON.parse(
+                    fs.readFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS, 'utf8')
+                ),
+            });
+        } else {
+            console.warn("Google credentials file not found at specified path. Google TTS will be unavailable.");
+        }
+    } else {
+        console.warn("GOOGLE_APPLICATION_CREDENTIALS not set. Google TTS will be unavailable.");
+    }
+} catch (error) {
+    console.error("Failed to initialize Google TTS client:", error);
+}
 
 // Helper function to get the last generated podcast's timestamp
 function getLastTimestamp(): string | null {
     try {
         const generatedPodcastDir = path.join(process.cwd(), 'public', 'generated_podcasts');
+
+        // Create directory if it doesn't exist
+        if (!fs.existsSync(generatedPodcastDir)) {
+            fs.mkdirSync(generatedPodcastDir, { recursive: true });
+            return null;
+        }
+
         const files = fs.readdirSync(generatedPodcastDir);
 
         // Extract and sort valid timestamps
@@ -34,127 +62,129 @@ function getLastTimestamp(): string | null {
     }
 }
 
-
-
-// Interface for podcast state (to be saved - if needed)
+// Interface for podcast state
 interface PodcastState {
     script: string;
     audioPath: string;
 }
 
-
-// Function to save podcast state (replace with your implementation if you need state persistence.)
+// Function to save podcast state (placeholder - implement if needed)
 function savePodcastState(state: PodcastState, timestamp: string): void {
-    console.log("Podcast state:", { timestamp, ...state }); // Placeholder:  Implement actual saving logic
+    console.log("Podcast state:", { timestamp, ...state });
 }
 
 export async function POST(req: NextRequest) {
     try {
-        const { text: enhancedScript, voice } = await req.json(); // Get the script and requested voice from the request body
-        const timestamp = getLastTimestamp() || uuidv4(); // Determine the timestamp (either get the latest or generate new one)
+        const { text: enhancedScript, voice: requestedVoice = 'nova' } = await req.json();
+        if (!enhancedScript) {
+            return new Response(JSON.stringify({ error: 'Script text is required' }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
 
+        const timestamp = getLastTimestamp() || uuidv4();
 
-
+        // Split the script into dialogue pieces
         const dialoguePieces = enhancedScript
             .split('\n')
             .filter((line: string) => line.trim() !== "" && line.includes(":"));
 
         if (dialoguePieces.length === 0) {
-            dialoguePieces.push(`Narrator: ${enhancedScript}`); // Default to "Narrator" if no dialogues.
+            dialoguePieces.push(`Narrator: ${enhancedScript}`);
         }
 
         const generateAudioSegment = async (piece: string): Promise<Buffer> => {
             const [speaker, ...textParts] = piece.split(":");
             const text = textParts.join(":").trim().replace(/^\*\*\s+/, "");
-            /*
-                        let speakerVoice = 'nova'; // Default voice
-            
-                        if (speaker === "**Kevin") {
-                            console.log("Using Kevin's voice for speaker:", speaker);
-                            speakerVoice = "onyx";  // Use 'onyx' for Kevin
-                        } else if (voice && voice !== 'nova') {  // If general voice is specified and not default use that
-                            console.log("Using specified voice for speaker:", speaker);
-                            speakerVoice = "nova"
-                        }
-                        console.log("Generating audio for:", { speaker, text, speakerVoice });
-            
-                        const response = await openai.audio.speech.create({
-                            model: "tts-1",
-                            voice: speakerVoice,  // Use the chosen voice
-                            input: text,
-                        });
-            
-                        const arrayBuffer = await response.arrayBuffer();
-                        return Buffer.from(arrayBuffer);  // Return a Buffer
-                    };
-            */
+
+            // Determine which TTS service to use based on speaker and available services
+            const useGoogleTTS = speaker.trim().toLowerCase().includes("kevin") && googleTTSClient !== null;
+
             let audioBuffer: Buffer;
 
-            if (speaker.trim().toLowerCase().endsWith("kevin")) {  // Use Google TTS for Kevin
-                let speakerVoice = voice || 'nova';
-                if (voice && voice !== 'nova') {
-                    speakerVoice = voice
-                }
+            if (useGoogleTTS) {
+                // Use Google TTS for Kevin
+                try {
+                    const [googleResponse] = await googleTTSClient!.synthesizeSpeech({
+                        input: { text },
+                        voice: { languageCode: 'en-US', name: 'en-US-Wavenet-D' },
+                        audioConfig: { audioEncoding: 'MP3' },
+                    });
 
+                    if (!googleResponse.audioContent) {
+                        throw new Error('No audio content returned from Google TTS');
+                    }
+
+                    audioBuffer = Buffer.from(googleResponse.audioContent);
+                } catch (error) {
+                    console.error("Google TTS failed, falling back to OpenAI:", error);
+                    // Fall back to OpenAI if Google TTS fails
+                    const fallbackResponse = await openai.audio.speech.create({
+                        model: "tts-1",
+                        voice: "onyx", // Use onyx for Kevin as fallback
+                        input: text,
+                    });
+                    const arrayBuffer = await fallbackResponse.arrayBuffer();
+                    audioBuffer = Buffer.from(arrayBuffer);
+                }
+            } else {
+                // Use OpenAI TTS for other speakers
+                // For speakers other than Kevin, use the requested voice
                 const openaiResponse = await openai.audio.speech.create({
                     model: "tts-1",
-                    voice: speakerVoice,
+                    voice: requestedVoice,
                     input: text,
                 });
 
                 const arrayBuffer = await openaiResponse.arrayBuffer();
                 audioBuffer = Buffer.from(arrayBuffer);
             }
-            else {  // Use OpenAI TTS for other speakers
-                const [googleResponse] = await googleTTS.synthesizeSpeech({
-                    input: { text },
-                    voice: { languageCode: 'en-US', name: 'en-US-Wavenet-D' }, // Choose your desired voice
-                    audioConfig: { audioEncoding: 'MP3' },
-                });
-                audioBuffer = googleResponse.audioContent as Buffer;
-            }
-            return audioBuffer;
 
+            return audioBuffer;
         };
 
-        const audioSegments: Buffer[] = await Promise.all(dialoguePieces.map(generateAudioSegment));  // Type annotation
+        // Generate all audio segments in parallel
+        const audioSegments: Buffer[] = await Promise.all(
+            dialoguePieces.map(generateAudioSegment)
+        );
         const combinedAudio = Buffer.concat(audioSegments);
 
-
-        // Save audio file
+        // Ensure directory exists and save the audio file
         const generatedPodcastDir = path.join(process.cwd(), 'public', 'generated_podcasts');
         fs.mkdirSync(generatedPodcastDir, { recursive: true });
         const audioFilePath = path.join(generatedPodcastDir, `${timestamp}_combined.mp3`);
         fs.writeFileSync(audioFilePath, combinedAudio);
 
+        // Save podcast state
+        savePodcastState({
+            script: enhancedScript,
+            audioPath: `/generated_podcasts/${timestamp}_combined.mp3`
+        }, timestamp);
 
-
-        savePodcastState({ script: enhancedScript, audioPath: `/generated_podcasts/${timestamp}_combined.mp3` }, timestamp);
-
-
-        return new Response(JSON.stringify({  // Send successful response to frontend
+        return new Response(JSON.stringify({
             message: "Podcast created successfully",
             task_id: timestamp,
             script: enhancedScript,
             audioPath: `/generated_podcasts/${timestamp}_combined.mp3`
-        }), { status: 200 });
+        }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+        });
 
     } catch (error: unknown) {
         console.error("Error creating podcast:", error);
+
+        let errorMessage = 'Failed to generate audio';
         if (error instanceof Error) {
-            if (error.message) {
-                // The error message is available
-                console.error('OpenAI API Error:', error.message);
-            } else {
-                // Something happened in setting up the request that triggered an Error
-                console.error('OpenAI API Error:', error.message);
-
-            }
-            console.error("Full OpenAI API Error:", error);
-
-            // Important to send a 500 response to the frontend so it knows of failure.
-            return new Response(JSON.stringify({ error: error.message || 'Failed to generate audio' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-
+            errorMessage = error.message;
         }
+
+        return new Response(JSON.stringify({
+            error: errorMessage
+        }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+        });
     }
 }

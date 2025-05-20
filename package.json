@@ -9,17 +9,19 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@google-cloud/text-to-speech": "^5.5.0",
+    "@google-cloud/text-to-speech": "^5.8.1",
     "@types/node-fetch": "^2.6.11",
     "@types/pdf-parse": "^1.1.4",
     "axios": "^1.9.0",
     "multer": "^1.4.5-lts.1",
     "next": "14.2.15",
     "node-fetch": "^3.3.2",
+    "openai": "^4.100.0",
     "pdf-parse": "^1.1.1",
     "react": "^18",
     "react-dom": "^18",
-    "spacy": "^0.0.4"
+    "spacy": "^0.0.4",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/node": "^20",
