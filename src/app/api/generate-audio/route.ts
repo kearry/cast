@@ -5,35 +5,10 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
 
-// Fix: Import Google TTS properly
-import * as googleTTS from '@google-cloud/text-to-speech';
-const TextToSpeechClient = googleTTS.v1.TextToSpeechClient;
-
 // Initialize OpenAI client
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
-
-// Initialize Google Cloud Text-to-Speech client with safer initialization
-let googleTTSClient: googleTTS.v1.TextToSpeechClient | null = null;
-try {
-    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-        // Try to read credentials file if path is provided
-        if (fs.existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
-            googleTTSClient = new TextToSpeechClient({
-                credentials: JSON.parse(
-                    fs.readFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS, 'utf8')
-                ),
-            });
-        } else {
-            console.warn("Google credentials file not found at specified path. Google TTS will be unavailable.");
-        }
-    } else {
-        console.warn("GOOGLE_APPLICATION_CREDENTIALS not set. Google TTS will be unavailable.");
-    }
-} catch (error) {
-    console.error("Failed to initialize Google TTS client:", error);
-}
 
 // Helper function to get the last generated podcast's timestamp
 function getLastTimestamp(): string | null {
@@ -73,9 +48,19 @@ function savePodcastState(state: PodcastState, timestamp: string): void {
     console.log("Podcast state:", { timestamp, ...state });
 }
 
+// Define voice mapping type
+interface VoiceMapping {
+    [speaker: string]: string;
+}
+
 export async function POST(req: NextRequest) {
     try {
-        const { text: enhancedScript, voice: requestedVoice = 'nova' } = await req.json();
+        const {
+            text: enhancedScript,
+            hostVoice = 'nova',  // Default host voice
+            guestVoice = 'alloy'  // Default guest voice
+        } = await req.json();
+
         if (!enhancedScript) {
             return new Response(JSON.stringify({ error: 'Script text is required' }), {
                 status: 400,
@@ -94,54 +79,39 @@ export async function POST(req: NextRequest) {
             dialoguePieces.push(`Narrator: ${enhancedScript}`);
         }
 
+        // Function to determine speaker category (host vs guest)
+        const determineVoice = (speaker: string): string => {
+            const speakerLower = speaker.trim().toLowerCase();
+
+            // Default voice mapping
+            if (speakerLower === 'host' || speakerLower.includes('host')) {
+                return hostVoice;
+            } else if (speakerLower === 'guest' || speakerLower.includes('guest')) {
+                return guestVoice;
+            } else if (speakerLower === 'narrator') {
+                return 'echo'; // Narrator always uses echo
+            } else {
+                // For any other speakers
+                return hostVoice; // Default to host voice
+            }
+        };
+
         const generateAudioSegment = async (piece: string): Promise<Buffer> => {
             const [speaker, ...textParts] = piece.split(":");
             const text = textParts.join(":").trim().replace(/^\*\*\s+/, "");
 
-            // Determine which TTS service to use based on speaker and available services
-            const useGoogleTTS = speaker.trim().toLowerCase().includes("kevin") && googleTTSClient !== null;
+            // Get the appropriate voice for this speaker
+            const voiceToUse = determineVoice(speaker);
 
-            let audioBuffer: Buffer;
+            // Use OpenAI TTS
+            const openaiResponse = await openai.audio.speech.create({
+                model: "tts-1",
+                voice: voiceToUse,
+                input: text,
+            });
 
-            if (useGoogleTTS) {
-                // Use Google TTS for Kevin
-                try {
-                    const [googleResponse] = await googleTTSClient!.synthesizeSpeech({
-                        input: { text },
-                        voice: { languageCode: 'en-US', name: 'en-US-Wavenet-D' },
-                        audioConfig: { audioEncoding: 'MP3' },
-                    });
-
-                    if (!googleResponse.audioContent) {
-                        throw new Error('No audio content returned from Google TTS');
-                    }
-
-                    audioBuffer = Buffer.from(googleResponse.audioContent);
-                } catch (error) {
-                    console.error("Google TTS failed, falling back to OpenAI:", error);
-                    // Fall back to OpenAI if Google TTS fails
-                    const fallbackResponse = await openai.audio.speech.create({
-                        model: "tts-1",
-                        voice: "onyx", // Use onyx for Kevin as fallback
-                        input: text,
-                    });
-                    const arrayBuffer = await fallbackResponse.arrayBuffer();
-                    audioBuffer = Buffer.from(arrayBuffer);
-                }
-            } else {
-                // Use OpenAI TTS for other speakers
-                // For speakers other than Kevin, use the requested voice
-                const openaiResponse = await openai.audio.speech.create({
-                    model: "tts-1",
-                    voice: requestedVoice,
-                    input: text,
-                });
-
-                const arrayBuffer = await openaiResponse.arrayBuffer();
-                audioBuffer = Buffer.from(arrayBuffer);
-            }
-
-            return audioBuffer;
+            const arrayBuffer = await openaiResponse.arrayBuffer();
+            return Buffer.from(arrayBuffer);
         };
 
         // Generate all audio segments in parallel

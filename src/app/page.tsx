@@ -7,7 +7,8 @@ export default function Home() {
   const [audioPath, setAudioPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [voiceOption, setVoiceOption] = useState('nova');
+  const [hostVoice, setHostVoice] = useState('nova');
+  const [guestVoice, setGuestVoice] = useState('alloy');
   const [processingStep, setProcessingStep] = useState<string | null>(null);
   const [exampleShown, setExampleShown] = useState(false);
 
@@ -20,19 +21,21 @@ export default function Home() {
   ];
 
   const showExample = () => {
-    const exampleScript = `Kevin: Welcome to our podcast on AI and technology!
+    const exampleScript = `Host: Welcome to our podcast on AI and technology!
 
-Host: Today we're discussing the future of AI technology. Kevin, what are your thoughts?
+Guest: Thanks for having me. I'm excited to discuss these topics.
 
-Kevin: (enthusiastically) I believe we're just scratching the surface of what's possible with AI.
+Host: Today we're exploring the future of AI. What are your thoughts on recent developments?
 
-Host: That's fascinating. Can you elaborate on that?
+Guest: (thoughtfully) I believe we're at a turning point. The advances in generative AI over the past year have been remarkable.
 
-Kevin: Sure! Think about how far we've come in just the last five years. From basic chatbots to systems that can generate images, music, and even help write code.
+Host: That's fascinating. Can you elaborate on the potential impacts?
 
-Host: And what about concerns around AI safety?
+Guest: Sure! From healthcare diagnostics to creative assistance, these tools are transforming how we work and solve problems.
 
-Kevin: That's a great point. As these systems become more capable, ensuring they're aligned with human values becomes increasingly important.`;
+Host: And what about concerns people might have?
+
+Guest: That's a great point. With any powerful technology, we need thoughtful guardrails and ethical considerations.`;
 
     setScript(exampleScript);
     setExampleShown(true);
@@ -65,7 +68,8 @@ Kevin: That's a great point. As these systems become more capable, ensuring they
         },
         body: JSON.stringify({
           text: enhancedScript,
-          voice: voiceOption
+          hostVoice,
+          guestVoice
         }),
       });
 
@@ -116,25 +120,48 @@ Kevin: That's a great point. As these systems become more capable, ensuring they
             />
           </div>
 
-          <div>
-            <label htmlFor="voice" className="block text-sm font-medium text-gray-700 mb-1">
-              Default Voice
-            </label>
-            <select
-              id="voice"
-              value={voiceOption}
-              onChange={(e) => setVoiceOption(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              {voices.map(voice => (
-                <option key={voice.id} value={voice.id}>
-                  {voice.name}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-sm text-gray-500">
-              This voice will be used for all speakers except those named &quot;Kevin&quot;, which will use a different voice.
-            </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="hostVoice" className="block text-sm font-medium text-gray-700 mb-1">
+                Host Voice
+              </label>
+              <select
+                id="hostVoice"
+                value={hostVoice}
+                onChange={(e) => setHostVoice(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {voices.map(voice => (
+                  <option key={`host-${voice.id}`} value={voice.id}>
+                    {voice.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-sm text-gray-500">
+                Used for speakers named &quot;Host&quot;
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="guestVoice" className="block text-sm font-medium text-gray-700 mb-1">
+                Guest Voice
+              </label>
+              <select
+                id="guestVoice"
+                value={guestVoice}
+                onChange={(e) => setGuestVoice(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {voices.map(voice => (
+                  <option key={`guest-${voice.id}`} value={voice.id}>
+                    {voice.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-sm text-gray-500">
+                Used for speakers named &quot;Guest&quot;
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -201,7 +228,8 @@ Kevin: That's a great point. As these systems become more capable, ensuring they
           <ul className="list-disc pl-5 space-y-1 text-gray-600">
             <li>Start each line of dialogue with the speaker&apos;s name followed by a colon (e.g., &quot;Host: Hello everyone&quot;).</li>
             <li>For sound effects or actions, use parentheses (e.g., &quot;Host: (laughs) That&apos;s a great point!&quot;).</li>
-            <li>Any speaker named &quot;Kevin&quot; will use a different voice from the selected default voice.</li>
+            <li>Speakers named &quot;Host&quot; will use the Host Voice, and speakers named &quot;Guest&quot; will use the Guest Voice.</li>
+            <li>Other speakers will use the Host Voice by default.</li>
             <li>For best results, keep individual dialogue segments short and natural.</li>
           </ul>
         </div>
