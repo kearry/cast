@@ -127,7 +127,12 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6 md:p-8">
       <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">AI Podcast Generator</h1>
+        <div className="flex justify-between items-center mb-2">
+          <h1 className="text-2xl font-bold text-gray-900">AI Podcast Generator</h1>
+          <a href="/chatbot" className="text-blue-600 hover:text-blue-800 visited:text-purple-600">
+            Try Chatbot
+          </a>
+        </div>
         <p className="text-gray-500 mb-6">Generate podcasts using OpenAI&apos;s latest gpt-4o-mini-tts technology</p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
