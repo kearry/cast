@@ -1,4 +1,5 @@
 import { performDeepSearch, addToRagDatabase } from './route'; // Assuming helpers are exported from route.ts
+import { describe, expect, it } from '@jest/globals';
 
 describe('API Helper Functions for create-chatbot', () => {
   describe('performDeepSearch', () => {

@@ -1,55 +1,82 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { describe, expect, jest, it, beforeEach } from '@jest/globals';
+
+// Define an interface for the expected body of the request
+interface CreateChatbotRequestBody {
+  personalityName: string;
+}
+
+// If RagDocument is a TypeScript type/interface, it will be imported later.
+// The specific 'ActualRagDocumentType' alias import has been removed as it was unused.
+
+// Define an interface for the expected module structure (runtime values)
+interface ActualRouteModule {
+  POST: (req: NextRequest) => Promise<NextResponse>;
+  performDeepSearch: (
+    personalityName: string
+  ) => Promise<string[]>;
+  addToRagDatabase: (
+    personalityName: string,
+    searchResults: string[]
+  ) => Promise<{ success: boolean; documentsAdded: number; error?: string }>;
+}
 
 // Step 1: Import the parts of the module we want to keep REAL.
-// We need to do this *before* jest.mock runs.
-// jest.requireActual ensures we get the original implementations.
-const { POST: actualPOSTHandler, RagDocument: ActualRagDocumentInterface } = jest.requireActual('./route');
+const actualModule = jest.requireActual('./route') as ActualRouteModule;
+const { POST: actualPOSTHandler } = actualModule;
 
-// Step 2: Define our jest.fn() mocks.
-const mockPerformDeepSearch = jest.fn();
-const mockAddToRagDatabase = jest.fn();
+
+// Step 2: Define our jest.fn() mocks with explicit types
+const mockPerformDeepSearch = jest.fn<
+  (personalityName: string) => Promise<string[]>
+>();
+const mockAddToRagDatabase = jest.fn<
+  (
+    personalityName: string,
+    searchResults: string[]
+  ) => Promise<{ success: boolean; documentsAdded: number; error?: string }>
+>();
 
 // Step 3: Mock the module.
-// For any function NOT listed here with a mock, its original implementation will be used
-// (if it was part of originalModule or if jest.requireActual was used correctly).
-// Here, we are explicitly saying what each export from './route' should be in the test environment.
 jest.mock('./route', () => ({
   __esModule: true,
-  POST: actualPOSTHandler, // Use the real POST handler
-  RagDocument: ActualRagDocumentInterface, // Use the real interface (if it's an exported value, not just a type)
-  performDeepSearch: mockPerformDeepSearch, // Use our mock for this
-  addToRagDatabase: mockAddToRagDatabase,   // Use our mock for this
+  POST: actualPOSTHandler,
+  performDeepSearch: mockPerformDeepSearch,
+  addToRagDatabase: mockAddToRagDatabase,
 }));
 
 // Step 4: Import from './route' AFTER jest.mock.
-// POST will be the actual POST handler.
-// performDeepSearch and addToRagDatabase will be the mocks defined above.
-import { POST, performDeepSearch, addToRagDatabase } from './route';
+// RagDocument here would be the TypeScript type/interface if it's not a value,
+// or the mocked value if it were mocked as a value.
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { POST, performDeepSearch, addToRagDatabase, RagDocument } from './route';
+/* eslint-enable @typescript-eslint/no-unused-vars */
 
 
 describe('/api/create-chatbot POST', () => {
+  // ... rest of your test code from the previous version remains the same
   let mockRequest: NextRequest;
 
   beforeEach(() => {
-    // Clear the mocks we defined (mockPerformDeepSearch, mockAddToRagDatabase)
     mockPerformDeepSearch.mockClear();
     mockAddToRagDatabase.mockClear();
 
-    // Default mock implementations
     mockPerformDeepSearch.mockResolvedValue(['mocked search result1', 'mocked search result2']);
     mockAddToRagDatabase.mockResolvedValue({ success: true, documentsAdded: 2 });
   });
 
-  const createMockRequest = (body: any | null) => {
+  const createMockRequest = (body: Partial<CreateChatbotRequestBody> | null) => {
+    const mockJson = jest.fn<() => Promise<Partial<CreateChatbotRequestBody> | null>>()
+      .mockResolvedValue(body);
     return {
-      json: jest.fn().mockResolvedValue(body),
+      json: mockJson,
       headers: new Headers({ 'Content-Type': 'application/json' }),
     } as unknown as NextRequest;
   };
 
   it('should return 200 and expected JSON on valid personalityName', async () => {
     mockRequest = createMockRequest({ personalityName: 'Test Bot' });
-    const response = await POST(mockRequest); // Uses actualPOSTHandler
+    const response = await POST(mockRequest);
     const responseBody = await response.json();
 
     expect(response.status).toBe(200);
@@ -76,7 +103,7 @@ describe('/api/create-chatbot POST', () => {
   it('should return 400 if personalityName is missing or empty', async () => {
     const cases = [{}, { personalityName: '' }];
     for (const body of cases) {
-      mockRequest = createMockRequest(body);
+      mockRequest = createMockRequest(body as Partial<CreateChatbotRequestBody>);
       const response = await POST(mockRequest);
       const responseBody = await response.json();
       expect(response.status).toBe(400);
@@ -103,21 +130,22 @@ describe('/api/create-chatbot POST', () => {
   });
 
   it('should return 500 if addToRagDatabase returns success: false', async () => {
-    mockAddToRagDatabase.mockResolvedValue({ success: false, documentsAdded: 0 });
+    mockAddToRagDatabase.mockResolvedValue({ success: false, documentsAdded: 0, error: 'DB save error' });
     mockRequest = createMockRequest({ personalityName: 'Test Bot' });
     const response = await POST(mockRequest);
     const responseBody = await response.json();
     expect(response.status).toBe(500);
-    expect(responseBody).toEqual({ error: 'Failed to add documents to RAG database' });
+    expect(responseBody).toEqual({ error: 'Failed to add documents to RAG database', details: 'DB save error' });
   });
-  
+
   it('should return 500 if request body parsing fails', async () => {
-     const req = {
-      json: jest.fn().mockRejectedValue(new Error("Failed to parse JSON")),
-      headers: new Headers({'Content-Type': 'application/json'}),
+    const req = {
+      json: jest.fn<() => Promise<Partial<CreateChatbotRequestBody> | null>>()
+        .mockRejectedValue(new Error("Failed to parse JSON")),
+      headers: new Headers({ 'Content-Type': 'application/json' }),
     } as unknown as NextRequest;
-    
-    const response = await POST(req); // POST is the actual handler
+
+    const response = await POST(req);
     const responseBody = await response.json();
 
     expect(response.status).toBe(500);
