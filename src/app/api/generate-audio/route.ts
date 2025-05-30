@@ -79,14 +79,49 @@ function savePodcastState(state: PodcastState, timestamp: string): void {
     console.log("Podcast state:", { timestamp, ...state });
 }
 
-// OpenAI TTS function (unchanged)
+// Helper function to estimate dialogue duration (roughly 150 words per minute for speech)
+function estimateDialogueDuration(text: string): number {
+    const wordCount = text.split(/\s+/).length;
+    return (wordCount / 150) * 60; // Convert to seconds
+}
+
+// Helper function to create batches based on estimated duration
+function createBatches<T>(items: T[], maxBatchDuration: number, getItemDuration: (item: T) => number): T[][] {
+    const batches: T[][] = [];
+    let currentBatch: T[] = [];
+    let currentBatchDuration = 0;
+
+    for (const item of items) {
+        const itemDuration = getItemDuration(item);
+
+        // If adding this item would exceed the batch limit, start a new batch
+        if (currentBatch.length > 0 && currentBatchDuration + itemDuration > maxBatchDuration) {
+            batches.push([...currentBatch]);
+            currentBatch = [item];
+            currentBatchDuration = itemDuration;
+        } else {
+            currentBatch.push(item);
+            currentBatchDuration += itemDuration;
+        }
+    }
+
+    // Add the last batch if it has items
+    if (currentBatch.length > 0) {
+        batches.push(currentBatch);
+    }
+
+    return batches;
+}
+
+// OpenAI TTS function with batching
 async function generateWithOpenAI(
     enhancedScript: string,
     hostVoice: string,
     hostTone: string,
     guestVoice: string,
     guestTone: string,
-    responseFormat: string
+    responseFormat: string,
+    onProgress?: (progress: string) => void
 ): Promise<Buffer> {
     const dialoguePieces = enhancedScript
         .split('\n')
@@ -95,6 +130,20 @@ async function generateWithOpenAI(
     if (dialoguePieces.length === 0) {
         dialoguePieces.push(`Host: ${enhancedScript}`);
     }
+
+    // Create batches with max 3-4 minutes per batch to stay well under API limits
+    const MAX_BATCH_DURATION = 200; // 3.33 minutes in seconds
+    const batches = createBatches(
+        dialoguePieces,
+        MAX_BATCH_DURATION,
+        (piece) => {
+            const [, ...textParts] = piece.split(":");
+            const text = textParts.join(":").trim().replace(/^\*\*\s+/, "");
+            return estimateDialogueDuration(text);
+        }
+    );
+
+    console.log(`Processing ${dialoguePieces.length} dialogue pieces in ${batches.length} batches`);
 
     const generateAudioSegment = async (piece: string): Promise<Buffer> => {
         const [speaker, ...textParts] = piece.split(":");
@@ -115,19 +164,49 @@ async function generateWithOpenAI(
         return Buffer.from(arrayBuffer);
     };
 
-    const audioSegments: Buffer[] = await Promise.all(
-        dialoguePieces.map(generateAudioSegment)
-    );
-    return Buffer.concat(audioSegments);
+    const batchAudioBuffers: Buffer[] = [];
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
+        onProgress?.(`Processing batch ${batchIndex + 1} of ${batches.length} (${batch.length} segments)...`);
+
+        try {
+            // Process all segments in the current batch
+            const batchSegments: Buffer[] = await Promise.all(
+                batch.map(generateAudioSegment)
+            );
+
+            // Combine segments in this batch
+            const batchAudio = Buffer.concat(batchSegments);
+            batchAudioBuffers.push(batchAudio);
+
+            console.log(`Completed batch ${batchIndex + 1}/${batches.length}, size: ${batchAudio.length} bytes`);
+
+            // Add a small delay between batches to avoid rate limiting
+            if (batchIndex < batches.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        } catch (error) {
+            console.error(`Error processing batch ${batchIndex + 1}:`, error);
+            throw new Error(`Failed to process batch ${batchIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    onProgress?.('Combining all audio batches...');
+    const finalAudio = Buffer.concat(batchAudioBuffers);
+    console.log(`Final combined audio size: ${finalAudio.length} bytes`);
+
+    return finalAudio;
 }
 
-// Corrected Gemini TTS function using validated API structure
+// Gemini TTS function with batching
 async function generateWithGeminiTTS(
     enhancedScript: string,
     hostVoice: string,
     guestVoice: string,
     hostStyleInstructions?: string,
-    guestStyleInstructions?: string
+    guestStyleInstructions?: string,
+    onProgress?: (progress: string) => void
 ): Promise<Buffer> {
     try {
         // Parse script to identify speakers
@@ -153,114 +232,129 @@ async function generateWithGeminiTTS(
             throw new Error(`Gemini TTS supports maximum 2 speakers. Found ${speakersArray.length}: ${speakersArray.join(', ')}`);
         }
 
-        // Build the prompt with individual speaker style instructions
-        let prompt = '';
-
-        // Add individual speaker style instructions if provided
-        const styleInstructions: string[] = [];
-        speakersArray.forEach(speaker => {
-            // Better speaker detection logic - same as voice assignment
-            const isSecondSpeaker = speaker.toLowerCase().includes('guest') ||
-                speaker.toLowerCase().includes('expert') ||
-                speaker.toLowerCase().includes('jane') ||
-                speaker.toLowerCase().includes('interviewer') ||
-                speaker.toLowerCase() !== 'host' && speaker.toLowerCase() !== 'narrator';
-
-            const speakerStyle = isSecondSpeaker ? guestStyleInstructions : hostStyleInstructions;
-
-            if (speakerStyle && speakerStyle.trim()) {
-                styleInstructions.push(`Make ${speaker} ${speakerStyle.trim()}`);
+        // Create batches - smaller for Gemini due to longer processing time
+        const MAX_BATCH_DURATION = 150; // 2.5 minutes per batch
+        const batches = createBatches(
+            dialoguePieces,
+            MAX_BATCH_DURATION,
+            (piece) => {
+                const [, ...textParts] = piece.split(":");
+                const text = textParts.join(":").trim();
+                return estimateDialogueDuration(text);
             }
-        });
+        );
 
-        if (styleInstructions.length > 0) {
-            prompt += `${styleInstructions.join(', and ')}: \n\n`;
-        }
+        console.log(`Processing ${dialoguePieces.length} dialogue pieces in ${batches.length} batches for Gemini TTS`);
 
-        prompt += `TTS the following conversation:\n${enhancedScript}`;
+        const batchAudioBuffers: Buffer[] = [];
 
-        console.log('Generating audio with Gemini TTS for speakers:', speakersArray);
-        console.log('Style instructions:', styleInstructions.join(', '));
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+            const batch = batches[batchIndex];
+            onProgress?.(`Processing Gemini batch ${batchIndex + 1} of ${batches.length} (${batch.length} segments)...`);
 
-        // Use the validated API structure from working examples
-        const response = await genAI.models.generateContent({
-            model: "gemini-2.5-flash-preview-tts",
-            contents: [{ parts: [{ text: prompt }] }],
-            config: {
-                responseModalities: ['AUDIO'],
-                speechConfig: speakersArray.length > 1 ? {
-                    multiSpeakerVoiceConfig: {
-                        speakerVoiceConfigs: speakersArray.map((speaker) => {
-                            // Better speaker detection logic - check for various guest/second speaker names
-                            const isSecondSpeaker = speaker.toLowerCase().includes('guest') ||
-                                speaker.toLowerCase().includes('expert') ||
-                                speaker.toLowerCase().includes('jane') ||
-                                speaker.toLowerCase().includes('interviewer') ||
-                                speaker.toLowerCase() !== 'host' && speaker.toLowerCase() !== 'narrator';
+            // Create script for this batch
+            const batchScript = batch.join('\n');
 
-                            const voiceName = isSecondSpeaker ? guestVoice : hostVoice;
+            // Build the prompt with individual speaker style instructions
+            let prompt = '';
 
-                            console.log(`Speaker "${speaker}" assigned voice "${voiceName}" (isSecondSpeaker: ${isSecondSpeaker})`);
+            // Add individual speaker style instructions if provided
+            const styleInstructions: string[] = [];
+            speakersArray.forEach(speaker => {
+                const isSecondSpeaker = speaker.toLowerCase().includes('guest') ||
+                    speaker.toLowerCase().includes('expert') ||
+                    speaker.toLowerCase().includes('jane') ||
+                    speaker.toLowerCase().includes('interviewer') ||
+                    speaker.toLowerCase() !== 'host' && speaker.toLowerCase() !== 'narrator';
 
-                            return {
-                                speaker: speaker,
-                                voiceConfig: {
-                                    prebuiltVoiceConfig: {
-                                        voiceName: voiceName
-                                    }
+                const speakerStyle = isSecondSpeaker ? guestStyleInstructions : hostStyleInstructions;
+
+                if (speakerStyle && speakerStyle.trim()) {
+                    styleInstructions.push(`Make ${speaker} ${speakerStyle.trim()}`);
+                }
+            });
+
+            if (styleInstructions.length > 0) {
+                prompt += `${styleInstructions.join(', and ')}: \n\n`;
+            }
+
+            prompt += `TTS the following conversation:\n${batchScript}`;
+
+            try {
+                const response = await genAI.models.generateContent({
+                    model: "gemini-2.5-flash-preview-tts",
+                    contents: [{ parts: [{ text: prompt }] }],
+                    config: {
+                        responseModalities: ['AUDIO'],
+                        speechConfig: speakersArray.length > 1 ? {
+                            multiSpeakerVoiceConfig: {
+                                speakerVoiceConfigs: speakersArray.map((speaker) => {
+                                    const isSecondSpeaker = speaker.toLowerCase().includes('guest') ||
+                                        speaker.toLowerCase().includes('expert') ||
+                                        speaker.toLowerCase().includes('jane') ||
+                                        speaker.toLowerCase().includes('interviewer') ||
+                                        speaker.toLowerCase() !== 'host' && speaker.toLowerCase() !== 'narrator';
+
+                                    const voiceName = isSecondSpeaker ? guestVoice : hostVoice;
+
+                                    return {
+                                        speaker: speaker,
+                                        voiceConfig: {
+                                            prebuiltVoiceConfig: {
+                                                voiceName: voiceName
+                                            }
+                                        }
+                                    };
+                                })
+                            }
+                        } : {
+                            voiceConfig: {
+                                prebuiltVoiceConfig: {
+                                    voiceName: hostVoice
                                 }
-                            };
-                        })
-                    }
-                } : {
-                    voiceConfig: {
-                        prebuiltVoiceConfig: {
-                            voiceName: hostVoice
+                            }
                         }
                     }
+                });
+
+                // Extract audio data from response
+                const candidate = response.candidates?.[0];
+                if (!candidate?.content?.parts?.[0]?.inlineData?.data) {
+                    throw new Error(`No audio content received from Gemini TTS for batch ${batchIndex + 1}`);
                 }
+
+                // Convert base64 audio data to buffer
+                const pcmData = Buffer.from(candidate.content.parts[0].inlineData.data, 'base64');
+
+                if (pcmData.length === 0) {
+                    throw new Error(`Generated PCM data is empty for batch ${batchIndex + 1}`);
+                }
+
+                // For batch processing, we need to combine raw PCM data first, then create WAV header
+                batchAudioBuffers.push(pcmData);
+
+                console.log(`Completed Gemini batch ${batchIndex + 1}/${batches.length}, PCM size: ${pcmData.length} bytes`);
+
+                // Add delay between Gemini API calls to avoid rate limiting
+                if (batchIndex < batches.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            } catch (error) {
+                console.error(`Error processing Gemini batch ${batchIndex + 1}:`, error);
+                throw new Error(`Failed to process Gemini batch ${batchIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
-        });
-
-        // Extract audio data from response
-        const candidate = response.candidates?.[0];
-        if (!candidate?.content?.parts?.[0]) {
-            throw new Error('No audio content received from Gemini TTS');
         }
 
-        const part = candidate.content.parts[0];
-        console.log('Response part structure:', {
-            hasInlineData: !!part.inlineData,
-            hasData: !!part.inlineData?.data,
-            dataType: typeof part.inlineData?.data,
-            dataLength: part.inlineData?.data?.length || 0
-        });
+        onProgress?.('Combining all Gemini audio batches...');
 
-        if (!part.inlineData?.data) {
-            console.error('Full response structure:', JSON.stringify(response, null, 2));
-            throw new Error('No inline audio data found in Gemini TTS response');
-        }
+        // Combine all PCM data first
+        const combinedPcmData = Buffer.concat(batchAudioBuffers);
 
-        // Convert base64 audio data to buffer
-        const pcmData = Buffer.from(part.inlineData.data, 'base64');
-        console.log('PCM data extracted:', {
-            pcmLength: pcmData.length,
-            base64Length: part.inlineData.data.length
-        });
+        // Create proper WAV file with headers for the combined data
+        const wavBuffer = createWavBuffer(combinedPcmData, 24000, 1, 16);
 
-        if (pcmData.length === 0) {
-            throw new Error('Generated PCM data is empty - check if Gemini TTS API call succeeded');
-        }
+        console.log(`Final Gemini combined audio - PCM size: ${combinedPcmData.length}, WAV size: ${wavBuffer.length} bytes`);
 
-        // Create proper WAV file with headers (Gemini returns raw PCM data)
-        const wavBuffer = createWavBuffer(pcmData, 24000, 1, 16);
-        console.log('WAV file created:', {
-            pcmSize: pcmData.length,
-            wavSize: wavBuffer.length,
-            headerSize: wavBuffer.length - pcmData.length
-        });
-
-        console.log('Successfully generated audio with Gemini TTS');
         return wavBuffer;
 
     } catch (error) {
@@ -333,6 +427,11 @@ export async function POST(req: NextRequest) {
         const timestamp = getLastTimestamp() || uuidv4();
         let combinedAudio: Buffer;
 
+        // Progress callback for batch processing
+        const onProgress = (progress: string) => {
+            console.log(`[${timestamp}] ${progress}`);
+        };
+
         // Generate audio based on selected TTS engine
         if (ttsEngine === 'gemini') {
             combinedAudio = await generateWithGeminiTTS(
@@ -340,7 +439,8 @@ export async function POST(req: NextRequest) {
                 geminiHostVoice,
                 geminiGuestVoice,
                 hostTone, // Host style instructions
-                guestTone // Guest style instructions
+                guestTone, // Guest style instructions
+                onProgress
             );
         } else {
             combinedAudio = await generateWithOpenAI(
@@ -349,7 +449,8 @@ export async function POST(req: NextRequest) {
                 hostTone,
                 guestVoice,
                 guestTone,
-                responseFormat
+                responseFormat,
+                onProgress
             );
         }
 
