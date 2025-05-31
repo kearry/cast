@@ -199,7 +199,56 @@ async function generateWithOpenAI(
     return finalAudio;
 }
 
-// Gemini TTS function with batching
+// Helper function to retry Gemini TTS calls with exponential backoff
+async function retryGeminiTTS(
+    genAI: any,
+    requestConfig: any,
+    batchIndex: number,
+    maxRetries: number = 3
+): Promise<any> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`Batch ${batchIndex + 1}, attempt ${attempt}/${maxRetries}`);
+
+            const response = await genAI.models.generateContent(requestConfig);
+
+            // Debug response structure for failed batches
+            const candidate = response.candidates?.[0];
+            console.log(`Batch ${batchIndex + 1} response structure:`, {
+                hasCandidates: !!response.candidates,
+                candidatesLength: response.candidates?.length || 0,
+                hasContent: !!candidate?.content,
+                hasParts: !!candidate?.content?.parts,
+                partsLength: candidate?.content?.parts?.length || 0,
+                hasInlineData: !!candidate?.content?.parts?.[0]?.inlineData,
+                hasData: !!candidate?.content?.parts?.[0]?.inlineData?.data,
+                dataLength: candidate?.content?.parts?.[0]?.inlineData?.data?.length || 0
+            });
+
+            if (!candidate?.content?.parts?.[0]?.inlineData?.data) {
+                throw new Error(`No audio content received from Gemini TTS (attempt ${attempt})`);
+            }
+
+            return response;
+        } catch (error) {
+            lastError = error instanceof Error ? error : new Error('Unknown error');
+            console.error(`Batch ${batchIndex + 1}, attempt ${attempt} failed:`, lastError.message);
+
+            if (attempt < maxRetries) {
+                // Exponential backoff: 3s, 6s, 12s
+                const delay = 3000 * Math.pow(2, attempt - 1);
+                console.log(`Retrying batch ${batchIndex + 1} in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+
+    throw lastError || new Error(`Failed after ${maxRetries} attempts`);
+}
+
+// Gemini TTS function with batching and retry logic
 async function generateWithGeminiTTS(
     enhancedScript: string,
     hostVoice: string,
@@ -232,8 +281,8 @@ async function generateWithGeminiTTS(
             throw new Error(`Gemini TTS supports maximum 2 speakers. Found ${speakersArray.length}: ${speakersArray.join(', ')}`);
         }
 
-        // Create batches - smaller for Gemini due to longer processing time
-        const MAX_BATCH_DURATION = 150; // 2.5 minutes per batch
+        // Create smaller batches to reduce API failure rate
+        const MAX_BATCH_DURATION = 120; // 2 minutes per batch (smaller for better reliability)
         const batches = createBatches(
             dialoguePieces,
             MAX_BATCH_DURATION,
@@ -280,50 +329,49 @@ async function generateWithGeminiTTS(
 
             prompt += `TTS the following conversation:\n${batchScript}`;
 
-            try {
-                const response = await genAI.models.generateContent({
-                    model: "gemini-2.5-flash-preview-tts",
-                    contents: [{ parts: [{ text: prompt }] }],
-                    config: {
-                        responseModalities: ['AUDIO'],
-                        speechConfig: speakersArray.length > 1 ? {
-                            multiSpeakerVoiceConfig: {
-                                speakerVoiceConfigs: speakersArray.map((speaker) => {
-                                    const isSecondSpeaker = speaker.toLowerCase().includes('guest') ||
-                                        speaker.toLowerCase().includes('expert') ||
-                                        speaker.toLowerCase().includes('jane') ||
-                                        speaker.toLowerCase().includes('interviewer') ||
-                                        speaker.toLowerCase() !== 'host' && speaker.toLowerCase() !== 'narrator';
+            // Prepare request configuration
+            const requestConfig = {
+                model: "gemini-2.5-flash-preview-tts",
+                contents: [{ parts: [{ text: prompt }] }],
+                config: {
+                    responseModalities: ['AUDIO'],
+                    speechConfig: speakersArray.length > 1 ? {
+                        multiSpeakerVoiceConfig: {
+                            speakerVoiceConfigs: speakersArray.map((speaker) => {
+                                const isSecondSpeaker = speaker.toLowerCase().includes('guest') ||
+                                    speaker.toLowerCase().includes('expert') ||
+                                    speaker.toLowerCase().includes('jane') ||
+                                    speaker.toLowerCase().includes('interviewer') ||
+                                    speaker.toLowerCase() !== 'host' && speaker.toLowerCase() !== 'narrator';
 
-                                    const voiceName = isSecondSpeaker ? guestVoice : hostVoice;
+                                const voiceName = isSecondSpeaker ? guestVoice : hostVoice;
 
-                                    return {
-                                        speaker: speaker,
-                                        voiceConfig: {
-                                            prebuiltVoiceConfig: {
-                                                voiceName: voiceName
-                                            }
+                                return {
+                                    speaker: speaker,
+                                    voiceConfig: {
+                                        prebuiltVoiceConfig: {
+                                            voiceName: voiceName
                                         }
-                                    };
-                                })
-                            }
-                        } : {
-                            voiceConfig: {
-                                prebuiltVoiceConfig: {
-                                    voiceName: hostVoice
-                                }
+                                    }
+                                };
+                            })
+                        }
+                    } : {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: {
+                                voiceName: hostVoice
                             }
                         }
                     }
-                });
+                }
+            };
+
+            try {
+                // Use retry logic for this batch
+                const response = await retryGeminiTTS(genAI, requestConfig, batchIndex);
 
                 // Extract audio data from response
                 const candidate = response.candidates?.[0];
-                if (!candidate?.content?.parts?.[0]?.inlineData?.data) {
-                    throw new Error(`No audio content received from Gemini TTS for batch ${batchIndex + 1}`);
-                }
-
-                // Convert base64 audio data to buffer
                 const pcmData = Buffer.from(candidate.content.parts[0].inlineData.data, 'base64');
 
                 if (pcmData.length === 0) {
@@ -335,13 +383,18 @@ async function generateWithGeminiTTS(
 
                 console.log(`Completed Gemini batch ${batchIndex + 1}/${batches.length}, PCM size: ${pcmData.length} bytes`);
 
-                // Add delay between Gemini API calls to avoid rate limiting
+                // Add delay between successful batches to avoid rate limiting
                 if (batchIndex < batches.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    await new Promise(resolve => setTimeout(resolve, 1500));
                 }
             } catch (error) {
-                console.error(`Error processing Gemini batch ${batchIndex + 1}:`, error);
-                throw new Error(`Failed to process Gemini batch ${batchIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                console.error(`Failed to process Gemini batch ${batchIndex + 1} after all retries:`, error);
+
+                // Provide more context about which batch failed
+                const failedBatchContent = batch.map((line, i) => `${i + 1}: ${line}`).join('\n');
+                console.error(`Failed batch content:\n${failedBatchContent}`);
+
+                throw new Error(`Failed to process Gemini batch ${batchIndex + 1} after retries: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
         }
 
