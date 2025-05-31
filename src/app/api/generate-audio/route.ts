@@ -248,7 +248,7 @@ async function retryGeminiTTS(
     throw lastError || new Error(`Failed after ${maxRetries} attempts`);
 }
 
-// Gemini TTS function with batching and retry logic
+// Fixed Gemini TTS function with consistent speaker order and sequential handling
 async function generateWithGeminiTTS(
     enhancedScript: string,
     hostVoice: string,
@@ -267,7 +267,7 @@ async function generateWithGeminiTTS(
             throw new Error('No dialogue found in script');
         }
 
-        // Extract unique speakers
+        // Extract unique speakers and create CONSISTENT mapping
         const speakers = new Set<string>();
         dialoguePieces.forEach(piece => {
             const [speaker] = piece.split(":");
@@ -281,10 +281,75 @@ async function generateWithGeminiTTS(
             throw new Error(`Gemini TTS supports maximum 2 speakers. Found ${speakersArray.length}: ${speakersArray.join(', ')}`);
         }
 
+        // CREATE CONSISTENT SPEAKER-TO-VOICE MAPPING ONCE WITH DETERMINISTIC ORDER
+        const speakerVoiceMapping = new Map<string, { voiceName: string; styleInstructions: string; order: number }>();
+
+        // Sort speakers deterministically to ensure consistent order across batches
+        const sortedSpeakers = speakersArray.sort((a, b) => {
+            // Put "Host" first, then others alphabetically
+            if (a.toLowerCase().includes('host') && !b.toLowerCase().includes('host')) return -1;
+            if (!a.toLowerCase().includes('host') && b.toLowerCase().includes('host')) return 1;
+            return a.localeCompare(b);
+        });
+
+        sortedSpeakers.forEach((speaker, index) => {
+            const isSecondSpeaker = speaker.toLowerCase().includes('guest') ||
+                speaker.toLowerCase().includes('expert') ||
+                speaker.toLowerCase().includes('jane') ||
+                speaker.toLowerCase().includes('interviewer') ||
+                (speaker.toLowerCase() !== 'host' && speaker.toLowerCase() !== 'narrator');
+
+            const voiceName = isSecondSpeaker ? guestVoice : hostVoice;
+            const styleInstructions = isSecondSpeaker ? guestStyleInstructions : hostStyleInstructions;
+
+            speakerVoiceMapping.set(speaker, {
+                voiceName,
+                styleInstructions: styleInstructions || '',
+                order: index
+            });
+        });
+
+        console.log('Consistent speaker mapping created:',
+            Array.from(speakerVoiceMapping.entries())
+                .sort(([, a], [, b]) => a.order - b.order)
+                .map(([speaker, config]) => `${speaker} (${config.order}) -> ${config.voiceName}`)
+                .join(', ')
+        );
+
+        // Consolidate sequential same-speaker dialogue to reduce confusion
+        const consolidatedDialogue: string[] = [];
+        let currentSpeaker = '';
+        let currentText = '';
+
+        dialoguePieces.forEach(piece => {
+            const [speaker, ...textParts] = piece.split(":");
+            const text = textParts.join(":").trim();
+            const cleanSpeaker = speaker.trim();
+
+            if (cleanSpeaker === currentSpeaker) {
+                // Same speaker continuing - append to current text
+                currentText += ' ' + text;
+            } else {
+                // Different speaker - save previous and start new
+                if (currentSpeaker && currentText) {
+                    consolidatedDialogue.push(`${currentSpeaker}: ${currentText}`);
+                }
+                currentSpeaker = cleanSpeaker;
+                currentText = text;
+            }
+        });
+
+        // Don't forget the last piece
+        if (currentSpeaker && currentText) {
+            consolidatedDialogue.push(`${currentSpeaker}: ${currentText}`);
+        }
+
+        console.log(`Consolidated ${dialoguePieces.length} pieces into ${consolidatedDialogue.length} consolidated dialogue segments`);
+
         // Create smaller batches to reduce API failure rate
-        const MAX_BATCH_DURATION = 120; // 2 minutes per batch (smaller for better reliability)
+        const MAX_BATCH_DURATION = 120; // 2 minutes per batch
         const batches = createBatches(
-            dialoguePieces,
+            consolidatedDialogue,
             MAX_BATCH_DURATION,
             (piece) => {
                 const [, ...textParts] = piece.split(":");
@@ -293,7 +358,7 @@ async function generateWithGeminiTTS(
             }
         );
 
-        console.log(`Processing ${dialoguePieces.length} dialogue pieces in ${batches.length} batches for Gemini TTS`);
+        console.log(`Processing ${consolidatedDialogue.length} consolidated dialogue pieces in ${batches.length} batches for Gemini TTS`);
 
         const batchAudioBuffers: Buffer[] = [];
 
@@ -304,22 +369,36 @@ async function generateWithGeminiTTS(
             // Create script for this batch
             const batchScript = batch.join('\n');
 
-            // Build the prompt with individual speaker style instructions
+            // Find which speakers are in THIS batch (but maintain consistent mapping AND ORDER)
+            const batchSpeakers = new Set<string>();
+            batch.forEach(piece => {
+                const [speaker] = piece.split(":");
+                batchSpeakers.add(speaker.trim());
+            });
+
+            // CRITICAL: Always use the same order for speakers across ALL batches
+            const batchSpeakersArray = Array.from(batchSpeakers).sort((a, b) => {
+                const orderA = speakerVoiceMapping.get(a)?.order ?? 999;
+                const orderB = speakerVoiceMapping.get(b)?.order ?? 999;
+                return orderA - orderB;
+            });
+
+            console.log(`Batch ${batchIndex + 1} speakers in consistent order:`,
+                batchSpeakersArray.map(speaker => {
+                    const config = speakerVoiceMapping.get(speaker);
+                    return `${speaker} (${config?.order}) -> ${config?.voiceName}`;
+                }).join(', ')
+            );
+
+            // Build the prompt with individual speaker style instructions using CONSISTENT mapping
             let prompt = '';
 
             // Add individual speaker style instructions if provided
             const styleInstructions: string[] = [];
-            speakersArray.forEach(speaker => {
-                const isSecondSpeaker = speaker.toLowerCase().includes('guest') ||
-                    speaker.toLowerCase().includes('expert') ||
-                    speaker.toLowerCase().includes('jane') ||
-                    speaker.toLowerCase().includes('interviewer') ||
-                    speaker.toLowerCase() !== 'host' && speaker.toLowerCase() !== 'narrator';
-
-                const speakerStyle = isSecondSpeaker ? guestStyleInstructions : hostStyleInstructions;
-
-                if (speakerStyle && speakerStyle.trim()) {
-                    styleInstructions.push(`Make ${speaker} ${speakerStyle.trim()}`);
+            batchSpeakersArray.forEach(speaker => {
+                const speakerConfig = speakerVoiceMapping.get(speaker);
+                if (speakerConfig && speakerConfig.styleInstructions.trim()) {
+                    styleInstructions.push(`Make ${speaker} ${speakerConfig.styleInstructions.trim()}`);
                 }
             });
 
@@ -329,28 +408,28 @@ async function generateWithGeminiTTS(
 
             prompt += `TTS the following conversation:\n${batchScript}`;
 
-            // Prepare request configuration
+            // Prepare request configuration using CONSISTENT speaker mapping AND ORDER
             const requestConfig = {
                 model: "gemini-2.5-flash-preview-tts",
                 contents: [{ parts: [{ text: prompt }] }],
                 config: {
                     responseModalities: ['AUDIO'],
-                    speechConfig: speakersArray.length > 1 ? {
+                    speechConfig: batchSpeakersArray.length > 1 ? {
                         multiSpeakerVoiceConfig: {
-                            speakerVoiceConfigs: speakersArray.map((speaker) => {
-                                const isSecondSpeaker = speaker.toLowerCase().includes('guest') ||
-                                    speaker.toLowerCase().includes('expert') ||
-                                    speaker.toLowerCase().includes('jane') ||
-                                    speaker.toLowerCase().includes('interviewer') ||
-                                    speaker.toLowerCase() !== 'host' && speaker.toLowerCase() !== 'narrator';
+                            // CRITICAL: Speakers must be in the same order every time
+                            speakerVoiceConfigs: batchSpeakersArray.map((speaker) => {
+                                const speakerConfig = speakerVoiceMapping.get(speaker);
+                                if (!speakerConfig) {
+                                    throw new Error(`No voice mapping found for speaker: ${speaker}`);
+                                }
 
-                                const voiceName = isSecondSpeaker ? guestVoice : hostVoice;
+                                console.log(`Batch ${batchIndex + 1}: Mapping ${speaker} (order ${speakerConfig.order}) -> ${speakerConfig.voiceName}`);
 
                                 return {
                                     speaker: speaker,
                                     voiceConfig: {
                                         prebuiltVoiceConfig: {
-                                            voiceName: voiceName
+                                            voiceName: speakerConfig.voiceName
                                         }
                                     }
                                 };
@@ -359,7 +438,7 @@ async function generateWithGeminiTTS(
                     } : {
                         voiceConfig: {
                             prebuiltVoiceConfig: {
-                                voiceName: hostVoice
+                                voiceName: speakerVoiceMapping.get(batchSpeakersArray[0])?.voiceName || hostVoice
                             }
                         }
                     }
@@ -367,7 +446,7 @@ async function generateWithGeminiTTS(
             };
 
             try {
-                // Use retry logic for this batch
+                // Use retry logic for this batch (with consistent mapping preserved)
                 const response = await retryGeminiTTS(genAI, requestConfig, batchIndex);
 
                 // Extract audio data from response
@@ -392,7 +471,13 @@ async function generateWithGeminiTTS(
 
                 // Provide more context about which batch failed
                 const failedBatchContent = batch.map((line, i) => `${i + 1}: ${line}`).join('\n');
+                const failedBatchSpeakers = batchSpeakersArray.map(speaker => {
+                    const config = speakerVoiceMapping.get(speaker);
+                    return `${speaker} (order ${config?.order}) -> ${config?.voiceName}`;
+                }).join(', ');
+
                 console.error(`Failed batch content:\n${failedBatchContent}`);
+                console.error(`Failed batch speaker mapping: ${failedBatchSpeakers}`);
 
                 throw new Error(`Failed to process Gemini batch ${batchIndex + 1} after retries: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
@@ -407,6 +492,12 @@ async function generateWithGeminiTTS(
         const wavBuffer = createWavBuffer(combinedPcmData, 24000, 1, 16);
 
         console.log(`Final Gemini combined audio - PCM size: ${combinedPcmData.length}, WAV size: ${wavBuffer.length} bytes`);
+        console.log('Final speaker mapping used:',
+            Array.from(speakerVoiceMapping.entries())
+                .sort(([, a], [, b]) => a.order - b.order)
+                .map(([speaker, config]) => `${speaker} (order ${config.order}) -> ${config.voiceName}`)
+                .join(', ')
+        );
 
         return wavBuffer;
 
