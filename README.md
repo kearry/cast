@@ -68,7 +68,8 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
    - For actions or sound effects, use parentheses (e.g., "Host: (laughs) That was funny!")
 
 3. **Select the number of speakers (1–4)**
-   - Gemini TTS supports a maximum of 2 speakers
+   - Gemini TTS only handles two voices per request. The server automatically
+     splits scripts with more than two speakers and merges the audio.
 
 3. **Configure voices**:
    - Choose from 5 specialized conversation voices

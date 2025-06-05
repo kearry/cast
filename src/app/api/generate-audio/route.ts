@@ -37,6 +37,75 @@ function createWavBuffer(pcmData: Buffer, sampleRate = 24000, channels = 1, bits
     return Buffer.concat([header, pcmData]);
 }
 
+interface SpeakerConfig {
+    voice: string;
+    tone: string;
+}
+
+// Split a multi-speaker script into sequential segments containing no more than two unique speakers
+function splitScriptIntoSegments(script: string): { script: string; speakers: string[] }[] {
+    const lines = script.split('\n').filter(l => l.trim() !== '');
+    const segments: { script: string; speakers: string[] }[] = [];
+    let currentLines: string[] = [];
+    let currentSpeakers = new Set<string>();
+
+    const pushSegment = () => {
+        if (currentLines.length > 0) {
+            segments.push({ script: currentLines.join('\n'), speakers: Array.from(currentSpeakers) });
+            currentLines = [];
+            currentSpeakers = new Set<string>();
+        }
+    };
+
+    for (const line of lines) {
+        const [speakerPart] = line.split(':');
+        const speaker = speakerPart.trim();
+
+        if (!currentSpeakers.has(speaker) && currentSpeakers.size >= 2) {
+            pushSegment();
+        }
+
+        currentSpeakers.add(speaker);
+        currentLines.push(line);
+    }
+
+    pushSegment();
+    return segments;
+}
+
+// Generate audio for scripts containing more than two speakers by processing sequential segments
+async function generateMultiSpeakerPodcast(
+    script: string,
+    speakerMap: Record<string, SpeakerConfig>,
+    onProgress?: (msg: string) => void
+): Promise<Buffer> {
+    const segments = splitScriptIntoSegments(script);
+    const pcmBuffers: Buffer[] = [];
+
+    for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        const [spkA, spkB] = seg.speakers;
+        const hostCfg = speakerMap[spkA] || { voice: DEFAULT_HOST_VOICE, tone: '' };
+        const guestCfg = spkB ? speakerMap[spkB] || { voice: DEFAULT_GUEST_VOICE, tone: '' } : hostCfg;
+
+        onProgress?.(`Generating segment ${i + 1}/${segments.length} with speakers: ${seg.speakers.join(', ')}`);
+
+        const wav = await generateWithGeminiTTS(
+            seg.script,
+            hostCfg.voice,
+            guestCfg.voice,
+            hostCfg.tone,
+            guestCfg.tone,
+            undefined
+        );
+
+        pcmBuffers.push(wav.slice(44)); // remove WAV header
+    }
+
+    const combinedPCM = Buffer.concat(pcmBuffers);
+    return createWavBuffer(combinedPCM, 24000, 1, 16);
+}
+
 // Initialize Google Gemini client for TTS
 const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || '' });
 
@@ -44,12 +113,12 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || '' });
 const DEFAULT_HOST_VOICE = process.env.HOST_DEFAULT_VOICE || 'Kore';
 const DEFAULT_GUEST_VOICE = process.env.GUEST_DEFAULT_VOICE || 'Puck';
 // Additional speaker defaults (currently unused but kept for future expansion)
-// const DEFAULT_SPEAKER3_VOICE = process.env.SPEAKER3_DEFAULT_VOICE || 'Charon';
-// const DEFAULT_SPEAKER4_VOICE = process.env.SPEAKER4_DEFAULT_VOICE || 'Aoede';
+const DEFAULT_SPEAKER3_VOICE = process.env.SPEAKER3_DEFAULT_VOICE || 'Charon';
+const DEFAULT_SPEAKER4_VOICE = process.env.SPEAKER4_DEFAULT_VOICE || 'Aoede';
 const DEFAULT_HOST_TONE = process.env.HOST_DEFAULT_TONE || '';
 const DEFAULT_GUEST_TONE = process.env.GUEST_DEFAULT_TONE || '';
-// const DEFAULT_SPEAKER3_TONE = process.env.SPEAKER3_DEFAULT_TONE || '';
-// const DEFAULT_SPEAKER4_TONE = process.env.SPEAKER4_DEFAULT_TONE || '';
+const DEFAULT_SPEAKER3_TONE = process.env.SPEAKER3_DEFAULT_TONE || '';
+const DEFAULT_SPEAKER4_TONE = process.env.SPEAKER4_DEFAULT_TONE || '';
 const DEFAULT_HOST_NAME = process.env.HOST_DEFAULT_NAME || 'Samantha';
 const DEFAULT_GUEST_NAME = process.env.GUEST_DEFAULT_NAME || 'Michael';
 const DEFAULT_SPEAKER3_NAME = process.env.SPEAKER3_DEFAULT_NAME || 'Patrick';
@@ -488,6 +557,8 @@ export async function POST(req: NextRequest) {
                 finalGuestVoice = speakerVoices[1] || finalGuestVoice;
             }
         }
+        const extraVoices = [DEFAULT_SPEAKER3_VOICE, DEFAULT_SPEAKER4_VOICE];
+        const extraTones = [DEFAULT_SPEAKER3_TONE, DEFAULT_SPEAKER4_TONE];
 
         if (Array.isArray(speakerTones) && speakerTones.length > 0) {
             finalHostTone = speakerTones[0] ?? finalHostTone;
@@ -510,12 +581,6 @@ export async function POST(req: NextRequest) {
                 headers: { 'Content-Type': 'application/json' }
             });
         }
-        if (numSpeakers > 2) {
-            return new Response(JSON.stringify({ error: 'Gemini TTS supports a maximum of 2 speakers' }), {
-                status: 400,
-                headers: { 'Content-Type': 'application/json' }
-            });
-        }
 
         const timestamp = getLastTimestamp() || uuidv4();
 
@@ -525,14 +590,40 @@ export async function POST(req: NextRequest) {
         };
 
         // Generate audio using Gemini TTS
-        const combinedAudio = await generateWithGeminiTTS(
-            enhancedScript,
-            finalHostVoice,
-            finalGuestVoice,
-            finalHostTone,
-            finalGuestTone,
-            onProgress
-        );
+        let combinedAudio: Buffer;
+
+        if (numSpeakers > 2) {
+            const speakerMap: Record<string, SpeakerConfig> = {};
+            for (let i = 0; i < finalSpeakerNames.length; i++) {
+                const name = finalSpeakerNames[i];
+                let voice = speakerVoices[i];
+                let tone = speakerTones[i];
+
+                if (voice === undefined) {
+                    if (i === 0) voice = finalHostVoice; else if (i === 1) voice = finalGuestVoice; else voice = extraVoices[i - 2];
+                }
+                if (tone === undefined) {
+                    if (i === 0) tone = finalHostTone; else if (i === 1) tone = finalGuestTone; else tone = extraTones[i - 2];
+                }
+
+                speakerMap[name] = { voice: voice || DEFAULT_HOST_VOICE, tone: tone || '' };
+            }
+
+            combinedAudio = await generateMultiSpeakerPodcast(
+                enhancedScript,
+                speakerMap,
+                onProgress
+            );
+        } else {
+            combinedAudio = await generateWithGeminiTTS(
+                enhancedScript,
+                finalHostVoice,
+                finalGuestVoice,
+                finalHostTone,
+                finalGuestTone,
+                onProgress
+            );
+        }
 
         // Save the audio file
         const generatedPodcastDir = path.join(process.cwd(), 'public', 'generated_podcasts');
