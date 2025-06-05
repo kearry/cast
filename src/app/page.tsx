@@ -230,9 +230,14 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
       <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6">
         <div className="flex justify-between items-center mb-2">
           <h1 className="text-2xl font-bold text-gray-900">AI Podcast Generator</h1>
-          <a href="/chatbot" className="text-blue-600 hover:text-blue-800 visited:text-purple-600">
-            Try Chatbot
-          </a>
+          <div className="flex gap-4">
+            <a href="/voices" className="text-blue-600 hover:text-blue-800 visited:text-purple-600">
+              Voice Demos
+            </a>
+            <a href="/chatbot" className="text-blue-600 hover:text-blue-800 visited:text-purple-600">
+              Try Chatbot
+            </a>
+          </div>
         </div>
         <p className="text-gray-500 mb-6">Generate podcasts using Google&apos;s Gemini 2.5 Multi-Speaker TTS</p>
 
