@@ -260,41 +260,26 @@ async function generateWithGeminiTTS(
             throw new Error('No dialogue found in script');
         }
 
-        // Extract unique speakers and create CONSISTENT mapping
-        const speakers = new Set<string>();
+        // Determine unique speakers in order of appearance
+        const orderedSpeakers: string[] = [];
         dialoguePieces.forEach(piece => {
             const [speaker] = piece.split(":");
-            speakers.add(speaker.trim());
+            const trimmed = speaker.trim();
+            if (!orderedSpeakers.includes(trimmed)) {
+                orderedSpeakers.push(trimmed);
+            }
         });
-
-        const speakersArray = Array.from(speakers);
 
         // Gemini TTS supports maximum 2 speakers
-        if (speakersArray.length > 2) {
-            throw new Error(`Gemini TTS supports maximum 2 speakers. Found ${speakersArray.length}: ${speakersArray.join(', ')}`);
+        if (orderedSpeakers.length > 2) {
+            throw new Error(`Gemini TTS supports maximum 2 speakers. Found ${orderedSpeakers.length}: ${orderedSpeakers.join(', ')}`);
         }
 
-        // CREATE CONSISTENT SPEAKER-TO-VOICE MAPPING ONCE WITH DETERMINISTIC ORDER
+        // Map the first encountered speaker to hostVoice and the second to guestVoice
         const speakerVoiceMapping = new Map<string, { voiceName: string; styleInstructions: string; order: number }>();
-
-        // Sort speakers deterministically to ensure consistent order across batches
-        const sortedSpeakers = speakersArray.sort((a, b) => {
-            // Put "Host" first, then others alphabetically
-            if (a.toLowerCase().includes('host') && !b.toLowerCase().includes('host')) return -1;
-            if (!a.toLowerCase().includes('host') && b.toLowerCase().includes('host')) return 1;
-            return a.localeCompare(b);
-        });
-
-        sortedSpeakers.forEach((speaker, index) => {
-            const isSecondSpeaker = speaker.toLowerCase().includes('guest') ||
-                speaker.toLowerCase().includes('expert') ||
-                speaker.toLowerCase().includes('jane') ||
-                speaker.toLowerCase().includes('interviewer') ||
-                (speaker.toLowerCase() !== 'host' && speaker.toLowerCase() !== 'narrator');
-
-            const voiceName = isSecondSpeaker ? guestVoice : hostVoice;
-            const styleInstructions = isSecondSpeaker ? guestStyleInstructions : hostStyleInstructions;
-
+        orderedSpeakers.forEach((speaker, index) => {
+            const voiceName = index === 0 ? hostVoice : guestVoice;
+            const styleInstructions = index === 0 ? hostStyleInstructions : guestStyleInstructions;
             speakerVoiceMapping.set(speaker, {
                 voiceName,
                 styleInstructions: styleInstructions || '',
