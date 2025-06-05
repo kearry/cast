@@ -433,7 +433,7 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
           <ul className="list-disc pl-5 space-y-1 text-gray-600">
             <li>Start each line of dialogue with the speaker&apos;s name followed by a colon (e.g., &quot;Host: Hello everyone&quot;).</li>
             <li>For sound effects or actions, use parentheses (e.g., &quot;Host: (laughs) That&apos;s a great point!&quot;).</li>
-            <li><strong>Gemini TTS:</strong> Supports up to 2 speakers with natural conversation flow, individual style control, and automatic language detection.</li>
+            <li><strong>Gemini TTS:</strong> Processes two speakers per request. The server splits multi-speaker scripts into multiple segments and merges the audio.</li>
             <li>Use individual style/tone instructions to control how each speaker sounds (professional vs casual, excited vs calm, etc.).</li>
           </ul>
         </div>
