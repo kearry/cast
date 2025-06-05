@@ -43,12 +43,13 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || '' });
 // Speaker defaults can be configured via environment variables
 const DEFAULT_HOST_VOICE = process.env.HOST_DEFAULT_VOICE || 'Kore';
 const DEFAULT_GUEST_VOICE = process.env.GUEST_DEFAULT_VOICE || 'Puck';
-const DEFAULT_SPEAKER3_VOICE = process.env.SPEAKER3_DEFAULT_VOICE || 'Charon';
-const DEFAULT_SPEAKER4_VOICE = process.env.SPEAKER4_DEFAULT_VOICE || 'Aoede';
+// Additional speaker defaults (currently unused but kept for future expansion)
+// const DEFAULT_SPEAKER3_VOICE = process.env.SPEAKER3_DEFAULT_VOICE || 'Charon';
+// const DEFAULT_SPEAKER4_VOICE = process.env.SPEAKER4_DEFAULT_VOICE || 'Aoede';
 const DEFAULT_HOST_TONE = process.env.HOST_DEFAULT_TONE || '';
 const DEFAULT_GUEST_TONE = process.env.GUEST_DEFAULT_TONE || '';
-const DEFAULT_SPEAKER3_TONE = process.env.SPEAKER3_DEFAULT_TONE || '';
-const DEFAULT_SPEAKER4_TONE = process.env.SPEAKER4_DEFAULT_TONE || '';
+// const DEFAULT_SPEAKER3_TONE = process.env.SPEAKER3_DEFAULT_TONE || '';
+// const DEFAULT_SPEAKER4_TONE = process.env.SPEAKER4_DEFAULT_TONE || '';
 const DEFAULT_HOST_NAME = process.env.HOST_DEFAULT_NAME || 'Samantha';
 const DEFAULT_GUEST_NAME = process.env.GUEST_DEFAULT_NAME || 'Michael';
 const DEFAULT_SPEAKER3_NAME = process.env.SPEAKER3_DEFAULT_NAME || 'Patrick';
@@ -124,18 +125,18 @@ function createBatches<T>(items: T[], maxBatchDuration: number, getItemDuration:
 
 // Helper function to retry Gemini TTS calls with exponential backoff
 async function retryGeminiTTS(
-    genAI: any,
-    requestConfig: any,
+    genAI: GoogleGenAI,
+    requestConfig: unknown,
     batchIndex: number,
     maxRetries: number = 3
-): Promise<any> {
+): Promise<unknown> {
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             console.log(`Batch ${batchIndex + 1}, attempt ${attempt}/${maxRetries}`);
 
-            const response = await genAI.models.generateContent(requestConfig);
+            const response = await genAI.models.generateContent(requestConfig as any);
 
             // Debug response structure for failed batches
             const candidate = response.candidates?.[0];
@@ -472,7 +473,7 @@ export async function POST(req: NextRequest) {
         let finalGuestVoice = geminiGuestVoice;
         let finalHostTone = hostTone;
         let finalGuestTone = guestTone;
-        let finalSpeakerNames = speakerNames.length > 0
+        const finalSpeakerNames = speakerNames.length > 0
             ? speakerNames
             : [
                 DEFAULT_HOST_NAME,
@@ -517,7 +518,6 @@ export async function POST(req: NextRequest) {
         }
 
         const timestamp = getLastTimestamp() || uuidv4();
-        let combinedAudio: Buffer;
 
         // Progress callback for batch processing
         const onProgress = (progress: string) => {
@@ -525,7 +525,7 @@ export async function POST(req: NextRequest) {
         };
 
         // Generate audio using Gemini TTS
-        combinedAudio = await generateWithGeminiTTS(
+        const combinedAudio = await generateWithGeminiTTS(
             enhancedScript,
             finalHostVoice,
             finalGuestVoice,
