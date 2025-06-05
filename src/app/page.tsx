@@ -31,7 +31,7 @@ const GEMINI_VOICES = [
   { id: 'Leda', name: 'Leda (Youthful)' },
   { id: 'Orus', name: 'Orus (Firm)' },
   { id: 'Aoede', name: 'Aoede (Breezy)' },
-  { id: 'Callirhoe', name: 'Callirhoe (Easy-going)' },
+  { id: 'Callirrhoe', name: 'Callirrhoe (Easy-going)' },
   { id: 'Autonoe', name: 'Autonoe (Bright)' },
   { id: 'Enceladus', name: 'Enceladus (Breathy)' },
   { id: 'Iapetus', name: 'Iapetus (Clear)' },
@@ -52,7 +52,7 @@ const GEMINI_VOICES = [
   { id: 'Vindemiatrix', name: 'Vindemiatrix (Gentle)' },
   { id: 'Sadachbia', name: 'Sadachbia (Lively)' },
   { id: 'Sadaltager', name: 'Sadaltager (Knowledgeable)' },
-  { id: 'Sulafar', name: 'Sulafar (Warm)' }
+  { id: 'Sulafat', name: 'Sulafat (Warm)' }
 ];
 
 
