@@ -5,10 +5,20 @@ import axios from 'axios';
 // Defaults can be overridden via environment variables
 const DEFAULT_HOST_VOICE = process.env.NEXT_PUBLIC_HOST_DEFAULT_VOICE || 'Kore';
 const DEFAULT_GUEST_VOICE = process.env.NEXT_PUBLIC_GUEST_DEFAULT_VOICE || 'Puck';
+const DEFAULT_SPEAKER3_VOICE = process.env.NEXT_PUBLIC_SPEAKER3_DEFAULT_VOICE || 'Charon';
+const DEFAULT_SPEAKER4_VOICE = process.env.NEXT_PUBLIC_SPEAKER4_DEFAULT_VOICE || 'Aoede';
+
 const DEFAULT_HOST_TONE =
   process.env.NEXT_PUBLIC_HOST_DEFAULT_TONE || 'Speak in a clear, professional tone.';
 const DEFAULT_GUEST_TONE =
   process.env.NEXT_PUBLIC_GUEST_DEFAULT_TONE || 'Speak in a natural, conversational tone.';
+const DEFAULT_SPEAKER3_TONE = process.env.NEXT_PUBLIC_SPEAKER3_DEFAULT_TONE || '';
+const DEFAULT_SPEAKER4_TONE = process.env.NEXT_PUBLIC_SPEAKER4_DEFAULT_TONE || '';
+
+const DEFAULT_HOST_NAME = 'host';
+const DEFAULT_GUEST1_NAME = 'guest1';
+const DEFAULT_GUEST2_NAME = 'guest2';
+const DEFAULT_GUEST3_NAME = 'guest3';
 
 // Real Gemini TTS Voice Options (from official documentation)
 const GEMINI_VOICES = [
@@ -60,7 +70,10 @@ export default function Home() {
   // Gemini settings
   const [geminiHostVoice, setGeminiHostVoice] = useState(DEFAULT_HOST_VOICE);
   const [geminiGuestVoice, setGeminiGuestVoice] = useState(DEFAULT_GUEST_VOICE);
-  const [extraSpeakers, setExtraSpeakers] = useState<{ voice: string; tone: string }[]>([]);
+  const [extraSpeakers, setExtraSpeakers] = useState<{ name: string; voice: string; tone: string }[]>([]);
+
+  const [hostName, setHostName] = useState(DEFAULT_HOST_NAME);
+  const [guestName, setGuestName] = useState(DEFAULT_GUEST1_NAME);
 
   // Number of speakers (1-4)
   const [numSpeakers, setNumSpeakers] = useState<number>(2);
@@ -70,8 +83,12 @@ export default function Home() {
       const needed = Math.max(0, numSpeakers - 2);
       const updated = [...prev];
       if (updated.length < needed) {
+        const defaults = [
+          { name: DEFAULT_GUEST2_NAME, voice: DEFAULT_SPEAKER3_VOICE, tone: DEFAULT_SPEAKER3_TONE },
+          { name: DEFAULT_GUEST3_NAME, voice: DEFAULT_SPEAKER4_VOICE, tone: DEFAULT_SPEAKER4_TONE }
+        ];
         for (let i = updated.length; i < needed; i++) {
-          updated.push({ voice: GEMINI_VOICES[0].id, tone: '' });
+          updated.push(defaults[i] || { name: `speaker${i + 3}`, voice: GEMINI_VOICES[0].id, tone: '' });
         }
       } else if (updated.length > needed) {
         updated.splice(needed);
@@ -82,7 +99,7 @@ export default function Home() {
 
   const updateExtraSpeaker = (
     index: number,
-    field: 'voice' | 'tone',
+    field: 'voice' | 'tone' | 'name',
     value: string
   ) => {
     setExtraSpeakers(prev => {
@@ -150,11 +167,18 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
         ...extraSpeakers.map((s) => s.tone),
       ].slice(0, numSpeakers);
 
+      const speakerNames = [
+        hostName,
+        guestName,
+        ...extraSpeakers.map((s) => s.name),
+      ].slice(0, numSpeakers);
+
       // Prepare request data based on TTS engine
       const requestData: any = {
         text: enhancedScript,
         speakerVoices,
         speakerTones,
+        speakerNames,
         // Keep legacy fields for backward compatibility
         geminiHostVoice: speakerVoices[0],
         geminiGuestVoice: speakerVoices[1] || geminiGuestVoice,
@@ -248,36 +272,53 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
         {/* Voice Configuration */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <p className="col-span-2 text-sm text-gray-500">Speakers: {numSpeakers}</p>
-          {[
+[
             {
+              name: hostName,
+              setName: setHostName,
               voice: geminiHostVoice,
               setVoice: setGeminiHostVoice,
               tone: hostTone,
               setTone: setHostTone,
-              label: 'Host Voice',
+              label: 'Speaker 1',
             },
             {
+              name: guestName,
+              setName: setGuestName,
               voice: geminiGuestVoice,
               setVoice: setGeminiGuestVoice,
               tone: guestTone,
               setTone: setGuestTone,
-              label: 'Guest Voice',
+              label: 'Speaker 2',
             },
             ...extraSpeakers.map((s, i) => ({
+              name: s.name,
+              setName: (n: string) => updateExtraSpeaker(i, 'name', n),
               voice: s.voice,
               setVoice: (v: string) => updateExtraSpeaker(i, 'voice', v),
               tone: s.tone,
               setTone: (t: string) => updateExtraSpeaker(i, 'tone', t),
-              label: `Speaker ${i + 3} Voice`,
+              label: `Speaker ${i + 3}`,
             })),
-          ]
-            .slice(0, numSpeakers)
+          ].slice(0, numSpeakers)
             .map((sp, idx) => (
               <div
                 key={idx}
                 className="space-y-3 p-4 border border-gray-200 rounded-md"
               >
                 <h3 className="font-medium text-gray-800">{sp.label}</h3>
+                <div>
+                  <label htmlFor={`name-${idx}`} className="block text-sm text-gray-600">
+                    Name
+                  </label>
+                  <input
+                    id={`name-${idx}`}
+                    type="text"
+                    value={sp.name}
+                    onChange={(e) => sp.setName(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
                 <div>
                   <label
                     htmlFor={`voice-${idx}`}
