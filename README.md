@@ -70,11 +70,14 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
    - Format each line with the speaker name followed by a colon (e.g., "Host: Welcome to the show!")
    - For actions or sound effects, use parentheses (e.g., "Host: (laughs) That was funny!")
 
-3. **Configure voices**:
+3. **Select the number of speakers (1–4)**
+   - Gemini TTS supports a maximum of 2 speakers
+
+4. **Configure voices**:
    - **OpenAI TTS**: Select voices and customize speaking tones
    - **Google Multi-Speaker TTS**: Choose from 5 specialized conversation voices
 
-4. **Generate and download** your podcast
+5. **Generate and download** your podcast
 
 ### Chatbot Interface
 

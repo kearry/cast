@@ -6,6 +6,9 @@ import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
 
+// Limited OpenAI voice set for up to four speakers
+const OPENAI_VOICE_IDS = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'];
+
 // WAV header creation function for Gemini TTS PCM data
 function createWavBuffer(pcmData: Buffer, sampleRate = 24000, channels = 1, bitsPerSample = 16): Buffer {
     const byteRate = sampleRate * channels * bitsPerSample / 8;
@@ -121,6 +124,7 @@ async function generateWithOpenAI(
     guestVoice: string,
     guestTone: string,
     responseFormat: string,
+    numSpeakers: number,
     onProgress?: (progress: string) => void
 ): Promise<Buffer> {
     const dialoguePieces = enhancedScript
@@ -130,6 +134,20 @@ async function generateWithOpenAI(
     if (dialoguePieces.length === 0) {
         dialoguePieces.push(`Host: ${enhancedScript}`);
     }
+
+    // Determine unique speaker names and map to voices
+    const speakerNames: string[] = [];
+    dialoguePieces.forEach(piece => {
+        const [sp] = piece.split(":");
+        const name = sp.trim();
+        if (!speakerNames.includes(name)) speakerNames.push(name);
+    });
+    const speakerVoiceMap = new Map<string, string>();
+    speakerNames.forEach((name, idx) => {
+        if (idx < numSpeakers) {
+            speakerVoiceMap.set(name, OPENAI_VOICE_IDS[idx % OPENAI_VOICE_IDS.length]);
+        }
+    });
 
     // Create batches with max 3-4 minutes per batch to stay well under API limits
     const MAX_BATCH_DURATION = 200; // 3.33 minutes in seconds
@@ -148,13 +166,12 @@ async function generateWithOpenAI(
     const generateAudioSegment = async (piece: string): Promise<Buffer> => {
         const [speaker, ...textParts] = piece.split(":");
         const text = textParts.join(":").trim().replace(/^\*\*\s+/, "");
-        const isGuest = speaker.trim().toLowerCase().includes('guest');
-        const voice = isGuest ? guestVoice : hostVoice;
-        const toneInstruction = isGuest ? guestTone : hostTone;
+        const mappedVoice = speakerVoiceMap.get(speaker.trim()) || hostVoice;
+        const toneInstruction = mappedVoice === guestVoice ? guestTone : hostTone;
 
         const openaiResponse = await openai.audio.speech.create({
             model: "gpt-4o-mini-tts",
-            voice: voice,
+            voice: mappedVoice,
             input: text,
             instructions: toneInstruction,
             response_format: responseFormat as 'mp3' | 'wav' | 'opus' | 'aac' | 'flac',
@@ -529,6 +546,7 @@ interface RequestBody {
     responseFormat?: string;
     geminiHostVoice?: string;
     geminiGuestVoice?: string;
+    numSpeakers?: number;
 }
 
 export async function POST(req: NextRequest) {
@@ -543,7 +561,8 @@ export async function POST(req: NextRequest) {
             responseFormat = 'mp3',
             // Gemini-specific voice defaults
             geminiHostVoice = 'Kore',
-            geminiGuestVoice = 'Puck'
+            geminiGuestVoice = 'Puck',
+            numSpeakers = 2
         }: RequestBody = await req.json();
 
         if (!enhancedScript) {
@@ -564,6 +583,13 @@ export async function POST(req: NextRequest) {
         if (ttsEngine === 'gemini' && !process.env.GOOGLE_API_KEY) {
             return new Response(JSON.stringify({ error: 'Google API key is required for Gemini TTS' }), {
                 status: 500,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        if (ttsEngine === 'gemini' && numSpeakers > 2) {
+            return new Response(JSON.stringify({ error: 'Gemini TTS supports a maximum of 2 speakers' }), {
+                status: 400,
                 headers: { 'Content-Type': 'application/json' }
             });
         }
@@ -594,6 +620,7 @@ export async function POST(req: NextRequest) {
                 guestVoice,
                 guestTone,
                 responseFormat,
+                numSpeakers,
                 onProgress
             );
         }

@@ -87,6 +87,9 @@ export default function Home() {
   const [geminiHostVoice, setGeminiHostVoice] = useState('Kore');
   const [geminiGuestVoice, setGeminiGuestVoice] = useState('Puck');
 
+  // Number of speakers (1-4)
+  const [numSpeakers, setNumSpeakers] = useState<number>(2);
+
   // Get current voice options based on selected TTS engine
   const getCurrentVoices = () => {
     return ttsEngine === 'gemini' ? GEMINI_VOICES : OPENAI_VOICES;
@@ -155,7 +158,8 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
       const requestData: any = {
         text: enhancedScript,
         ttsEngine,
-        responseFormat: audioFormat
+        responseFormat: audioFormat,
+        numSpeakers,
       };
 
       if (ttsEngine === 'gemini') {
@@ -257,11 +261,28 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
                 ? 'Gemini 2.5 TTS creates natural conversations with up to 2 speakers, 30 voice options, and 24 language support.'
                 : 'OpenAI TTS offers individual speaker control with custom tones and multiple audio formats.'
               }
-            </p>
-          </div>
+          </p>
+        </div>
 
-          {/* Voice Configuration */}
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        {/* Number of Speakers */}
+        <div>
+          <label htmlFor="numSpeakers" className="block text-sm font-medium text-gray-700 mb-1">
+            Number of Speakers
+          </label>
+          <input
+            id="numSpeakers"
+            type="number"
+            min={1}
+            max={4}
+            value={numSpeakers}
+            onChange={(e) => setNumSpeakers(Number(e.target.value))}
+            className="w-24 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+
+        {/* Voice Configuration */}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <p className="col-span-2 text-sm text-gray-500">Speakers: {numSpeakers}</p>
             {/* Host Voice Settings */}
             <div className="space-y-3 p-4 border border-gray-200 rounded-md">
               <h3 className="font-medium text-gray-800">Host Voice</h3>
