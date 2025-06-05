@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 // Real Gemini TTS Voice Options (from official documentation)
@@ -52,9 +52,39 @@ export default function Home() {
   // Gemini settings
   const [geminiHostVoice, setGeminiHostVoice] = useState('Kore');
   const [geminiGuestVoice, setGeminiGuestVoice] = useState('Puck');
+  const [extraSpeakers, setExtraSpeakers] = useState<{ voice: string; tone: string }[]>([]);
 
   // Number of speakers (1-4)
   const [numSpeakers, setNumSpeakers] = useState<number>(2);
+
+  useEffect(() => {
+    setExtraSpeakers(prev => {
+      const needed = Math.max(0, numSpeakers - 2);
+      const updated = [...prev];
+      if (updated.length < needed) {
+        for (let i = updated.length; i < needed; i++) {
+          updated.push({ voice: GEMINI_VOICES[0].id, tone: '' });
+        }
+      } else if (updated.length > needed) {
+        updated.splice(needed);
+      }
+      return updated;
+    });
+  }, [numSpeakers]);
+
+  const updateExtraSpeaker = (
+    index: number,
+    field: 'voice' | 'tone',
+    value: string
+  ) => {
+    setExtraSpeakers(prev => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], [field]: value };
+      }
+      return updated;
+    });
+  };
 
   // Get current voice options (Gemini only)
   const getCurrentVoices = () => GEMINI_VOICES;
@@ -99,13 +129,29 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
       setProcessingStep('Generating audio with Google Gemini Multi-Speaker TTS...');
       const enhancedScript = dialogues.map(d => `${d.speaker}: ${d.text}`).join('\n');
 
+      // Build speaker configuration arrays
+      const speakerVoices = [
+        geminiHostVoice,
+        geminiGuestVoice,
+        ...extraSpeakers.map((s) => s.voice),
+      ].slice(0, numSpeakers);
+
+      const speakerTones = [
+        hostTone,
+        guestTone,
+        ...extraSpeakers.map((s) => s.tone),
+      ].slice(0, numSpeakers);
+
       // Prepare request data based on TTS engine
       const requestData: any = {
         text: enhancedScript,
-        geminiHostVoice,
-        geminiGuestVoice,
-        hostTone,
-        guestTone,
+        speakerVoices,
+        speakerTones,
+        // Keep legacy fields for backward compatibility
+        geminiHostVoice: speakerVoices[0],
+        geminiGuestVoice: speakerVoices[1] || geminiGuestVoice,
+        hostTone: speakerTones[0],
+        guestTone: speakerTones[1] || guestTone,
         numSpeakers,
       };
 
@@ -194,88 +240,79 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
         {/* Voice Configuration */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <p className="col-span-2 text-sm text-gray-500">Speakers: {numSpeakers}</p>
-            {/* Host Voice Settings */}
-            <div className="space-y-3 p-4 border border-gray-200 rounded-md">
-              <h3 className="font-medium text-gray-800">Host Voice</h3>
-              <div>
-                <label htmlFor="hostVoice" className="block text-sm text-gray-600">
-                  Voice
-                </label>
-                <select
-                  id="hostVoice"
-                  value={geminiHostVoice}
-                  onChange={(e) => setGeminiHostVoice(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  {currentVoices.map(voice => (
-                    <option key={`host-${voice.id}`} value={voice.id}>
-                      {voice.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {
+          {[
+            {
+              voice: geminiHostVoice,
+              setVoice: setGeminiHostVoice,
+              tone: hostTone,
+              setTone: setHostTone,
+              label: 'Host Voice',
+            },
+            {
+              voice: geminiGuestVoice,
+              setVoice: setGeminiGuestVoice,
+              tone: guestTone,
+              setTone: setGuestTone,
+              label: 'Guest Voice',
+            },
+            ...extraSpeakers.map((s, i) => ({
+              voice: s.voice,
+              setVoice: (v: string) => updateExtraSpeaker(i, 'voice', v),
+              tone: s.tone,
+              setTone: (t: string) => updateExtraSpeaker(i, 'tone', t),
+              label: `Speaker ${i + 3} Voice`,
+            })),
+          ]
+            .slice(0, numSpeakers)
+            .map((sp, idx) => (
+              <div
+                key={idx}
+                className="space-y-3 p-4 border border-gray-200 rounded-md"
+              >
+                <h3 className="font-medium text-gray-800">{sp.label}</h3>
                 <div>
-                  <label htmlFor="hostTone" className="block text-sm text-gray-600">
-                    Host Style Instructions
+                  <label
+                    htmlFor={`voice-${idx}`}
+                    className="block text-sm text-gray-600"
+                  >
+                    Voice
+                  </label>
+                  <select
+                    id={`voice-${idx}`}
+                    value={sp.voice}
+                    onChange={(e) => sp.setVoice(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    {currentVoices.map((voice) => (
+                      <option key={`${idx}-${voice.id}`} value={voice.id}>
+                        {voice.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor={`tone-${idx}`}
+                    className="block text-sm text-gray-600"
+                  >
+                    {sp.label.replace('Voice', 'Style Instructions')}
                   </label>
                   <textarea
-                    id="hostTone"
-                    value={hostTone}
-                    onChange={(e) => setHostTone(e.target.value)}
+                    id={`tone-${idx}`}
+                    value={sp.tone}
+                    onChange={(e) => sp.setTone(e.target.value)}
                     className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="sound professional and authoritative"
+                    placeholder="e.g. professional, casual"
                     rows={2}
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    How should the host speak? (professional, excited, calm, etc.)
+                    How should this speaker sound?
                   </p>
                 </div>
-              }
-            </div>
-
-            {/* Guest Voice Settings */}
-            <div className="space-y-3 p-4 border border-gray-200 rounded-md">
-              <h3 className="font-medium text-gray-800">Guest Voice</h3>
-              <div>
-                <label htmlFor="guestVoice" className="block text-sm text-gray-600">
-                  Voice
-                </label>
-                <select
-                  id="guestVoice"
-                  value={geminiGuestVoice}
-                  onChange={(e) => setGeminiGuestVoice(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  {currentVoices.map(voice => (
-                    <option key={`guest-${voice.id}`} value={voice.id}>
-                      {voice.name}
-                    </option>
-                  ))}
-                </select>
               </div>
-
-              {
-                <div>
-                  <label htmlFor="guestTone" className="block text-sm text-gray-600">
-                    Guest Style Instructions
-                  </label>
-                  <textarea
-                    id="guestTone"
-                    value={guestTone}
-                    onChange={(e) => setGuestTone(e.target.value)}
-                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="sound enthusiastic and knowledgeable"
-                    rows={2}
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    How should the guest speak? (enthusiastic, thoughtful, casual, etc.)
-                  </p>
-                </div>
-              }
-            </div>
-          </div>
+            ))}
+        </div>
 
 
           <div className="flex flex-wrap gap-2">

@@ -434,6 +434,8 @@ interface RequestBody {
     guestTone?: string;
     geminiHostVoice?: string;
     geminiGuestVoice?: string;
+    speakerVoices?: string[];
+    speakerTones?: string[];
     numSpeakers?: number;
 }
 
@@ -445,8 +447,29 @@ export async function POST(req: NextRequest) {
             guestTone = '',
             geminiHostVoice = 'Kore',
             geminiGuestVoice = 'Puck',
+            speakerVoices = [],
+            speakerTones = [],
             numSpeakers = 2
         }: RequestBody = await req.json();
+
+        let finalHostVoice = geminiHostVoice;
+        let finalGuestVoice = geminiGuestVoice;
+        let finalHostTone = hostTone;
+        let finalGuestTone = guestTone;
+
+        if (Array.isArray(speakerVoices) && speakerVoices.length > 0) {
+            finalHostVoice = speakerVoices[0] || finalHostVoice;
+            if (speakerVoices.length > 1) {
+                finalGuestVoice = speakerVoices[1] || finalGuestVoice;
+            }
+        }
+
+        if (Array.isArray(speakerTones) && speakerTones.length > 0) {
+            finalHostTone = speakerTones[0] ?? finalHostTone;
+            if (speakerTones.length > 1) {
+                finalGuestTone = speakerTones[1] ?? finalGuestTone;
+            }
+        }
 
         if (!enhancedScript) {
             return new Response(JSON.stringify({ error: 'Script text is required' }), {
@@ -480,10 +503,10 @@ export async function POST(req: NextRequest) {
         // Generate audio using Gemini TTS
         combinedAudio = await generateWithGeminiTTS(
             enhancedScript,
-            geminiHostVoice,
-            geminiGuestVoice,
-            hostTone,
-            guestTone,
+            finalHostVoice,
+            finalGuestVoice,
+            finalHostTone,
+            finalGuestTone,
             onProgress
         );
 
