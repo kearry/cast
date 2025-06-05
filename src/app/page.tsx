@@ -15,10 +15,11 @@ const DEFAULT_GUEST_TONE =
 const DEFAULT_SPEAKER3_TONE = process.env.NEXT_PUBLIC_SPEAKER3_DEFAULT_TONE || '';
 const DEFAULT_SPEAKER4_TONE = process.env.NEXT_PUBLIC_SPEAKER4_DEFAULT_TONE || '';
 
-const DEFAULT_HOST_NAME = 'host';
-const DEFAULT_GUEST1_NAME = 'guest1';
-const DEFAULT_GUEST2_NAME = 'guest2';
-const DEFAULT_GUEST3_NAME = 'guest3';
+// Default speaker names can be overridden via environment variables
+const DEFAULT_HOST_NAME = process.env.NEXT_PUBLIC_HOST_DEFAULT_NAME || 'Samantha';
+const DEFAULT_GUEST1_NAME = process.env.NEXT_PUBLIC_GUEST_DEFAULT_NAME || 'Michael';
+const DEFAULT_GUEST2_NAME = process.env.NEXT_PUBLIC_SPEAKER3_DEFAULT_NAME || 'Patrick';
+const DEFAULT_GUEST3_NAME = process.env.NEXT_PUBLIC_SPEAKER4_DEFAULT_NAME || 'Danny';
 
 // Real Gemini TTS Voice Options (from official documentation)
 const GEMINI_VOICES = [

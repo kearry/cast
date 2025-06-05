@@ -49,6 +49,10 @@ const DEFAULT_HOST_TONE = process.env.HOST_DEFAULT_TONE || '';
 const DEFAULT_GUEST_TONE = process.env.GUEST_DEFAULT_TONE || '';
 const DEFAULT_SPEAKER3_TONE = process.env.SPEAKER3_DEFAULT_TONE || '';
 const DEFAULT_SPEAKER4_TONE = process.env.SPEAKER4_DEFAULT_TONE || '';
+const DEFAULT_HOST_NAME = process.env.HOST_DEFAULT_NAME || 'Samantha';
+const DEFAULT_GUEST_NAME = process.env.GUEST_DEFAULT_NAME || 'Michael';
+const DEFAULT_SPEAKER3_NAME = process.env.SPEAKER3_DEFAULT_NAME || 'Patrick';
+const DEFAULT_SPEAKER4_NAME = process.env.SPEAKER4_DEFAULT_NAME || 'Danny';
 
 // Helper function to get the last generated podcast's timestamp
 function getLastTimestamp(): string | null {
@@ -468,6 +472,14 @@ export async function POST(req: NextRequest) {
         let finalGuestVoice = geminiGuestVoice;
         let finalHostTone = hostTone;
         let finalGuestTone = guestTone;
+        let finalSpeakerNames = speakerNames.length > 0
+            ? speakerNames
+            : [
+                DEFAULT_HOST_NAME,
+                DEFAULT_GUEST_NAME,
+                DEFAULT_SPEAKER3_NAME,
+                DEFAULT_SPEAKER4_NAME,
+              ].slice(0, numSpeakers);
 
         if (Array.isArray(speakerVoices) && speakerVoices.length > 0) {
             finalHostVoice = speakerVoices[0] || finalHostVoice;
@@ -563,7 +575,7 @@ export async function POST(req: NextRequest) {
             engine: 'gemini',
             format: fileExtension,
             speakers_detected: 'Auto-detected from script',
-            speakerNames: Array.isArray(speakerNames) ? speakerNames.slice(0, numSpeakers) : []
+            speakerNames: Array.isArray(finalSpeakerNames) ? finalSpeakerNames.slice(0, numSpeakers) : []
         }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }
