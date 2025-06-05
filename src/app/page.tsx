@@ -2,6 +2,14 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
+// Defaults can be overridden via environment variables
+const DEFAULT_HOST_VOICE = process.env.NEXT_PUBLIC_HOST_DEFAULT_VOICE || 'Kore';
+const DEFAULT_GUEST_VOICE = process.env.NEXT_PUBLIC_GUEST_DEFAULT_VOICE || 'Puck';
+const DEFAULT_HOST_TONE =
+  process.env.NEXT_PUBLIC_HOST_DEFAULT_TONE || 'Speak in a clear, professional tone.';
+const DEFAULT_GUEST_TONE =
+  process.env.NEXT_PUBLIC_GUEST_DEFAULT_TONE || 'Speak in a natural, conversational tone.';
+
 // Real Gemini TTS Voice Options (from official documentation)
 const GEMINI_VOICES = [
   { id: 'Zephyr', name: 'Zephyr (Bright)' },
@@ -46,12 +54,12 @@ export default function Home() {
   const [exampleShown, setExampleShown] = useState(false);
 
   // Shared settings for tone/style (used differently by each engine)
-  const [hostTone, setHostTone] = useState('Speak in a clear, professional tone.');
-  const [guestTone, setGuestTone] = useState('Speak in a natural, conversational tone.');
+  const [hostTone, setHostTone] = useState(DEFAULT_HOST_TONE);
+  const [guestTone, setGuestTone] = useState(DEFAULT_GUEST_TONE);
 
   // Gemini settings
-  const [geminiHostVoice, setGeminiHostVoice] = useState('Kore');
-  const [geminiGuestVoice, setGeminiGuestVoice] = useState('Puck');
+  const [geminiHostVoice, setGeminiHostVoice] = useState(DEFAULT_HOST_VOICE);
+  const [geminiGuestVoice, setGeminiGuestVoice] = useState(DEFAULT_GUEST_VOICE);
   const [extraSpeakers, setExtraSpeakers] = useState<{ voice: string; tone: string }[]>([]);
 
   // Number of speakers (1-4)

@@ -40,6 +40,12 @@ function createWavBuffer(pcmData: Buffer, sampleRate = 24000, channels = 1, bits
 // Initialize Google Gemini client for TTS
 const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || '' });
 
+// Speaker defaults can be configured via environment variables
+const DEFAULT_HOST_VOICE = process.env.HOST_DEFAULT_VOICE || 'Kore';
+const DEFAULT_GUEST_VOICE = process.env.GUEST_DEFAULT_VOICE || 'Puck';
+const DEFAULT_HOST_TONE = process.env.HOST_DEFAULT_TONE || '';
+const DEFAULT_GUEST_TONE = process.env.GUEST_DEFAULT_TONE || '';
+
 // Helper function to get the last generated podcast's timestamp
 function getLastTimestamp(): string | null {
     try {
@@ -443,10 +449,10 @@ export async function POST(req: NextRequest) {
     try {
         const {
             text: enhancedScript,
-            hostTone = '',
-            guestTone = '',
-            geminiHostVoice = 'Kore',
-            geminiGuestVoice = 'Puck',
+            hostTone = DEFAULT_HOST_TONE,
+            guestTone = DEFAULT_GUEST_TONE,
+            geminiHostVoice = DEFAULT_HOST_VOICE,
+            geminiGuestVoice = DEFAULT_GUEST_VOICE,
             speakerVoices = [],
             speakerTones = [],
             numSpeakers = 2
