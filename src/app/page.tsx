@@ -273,7 +273,8 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
         {/* Voice Configuration */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <p className="col-span-2 text-sm text-gray-500">Speakers: {numSpeakers}</p>
-[
+{
+            [
             {
               name: hostName,
               setName: setHostName,
