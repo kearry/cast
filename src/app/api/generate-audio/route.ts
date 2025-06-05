@@ -43,8 +43,12 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || '' });
 // Speaker defaults can be configured via environment variables
 const DEFAULT_HOST_VOICE = process.env.HOST_DEFAULT_VOICE || 'Kore';
 const DEFAULT_GUEST_VOICE = process.env.GUEST_DEFAULT_VOICE || 'Puck';
+const DEFAULT_SPEAKER3_VOICE = process.env.SPEAKER3_DEFAULT_VOICE || 'Charon';
+const DEFAULT_SPEAKER4_VOICE = process.env.SPEAKER4_DEFAULT_VOICE || 'Aoede';
 const DEFAULT_HOST_TONE = process.env.HOST_DEFAULT_TONE || '';
 const DEFAULT_GUEST_TONE = process.env.GUEST_DEFAULT_TONE || '';
+const DEFAULT_SPEAKER3_TONE = process.env.SPEAKER3_DEFAULT_TONE || '';
+const DEFAULT_SPEAKER4_TONE = process.env.SPEAKER4_DEFAULT_TONE || '';
 
 // Helper function to get the last generated podcast's timestamp
 function getLastTimestamp(): string | null {
@@ -442,6 +446,7 @@ interface RequestBody {
     geminiGuestVoice?: string;
     speakerVoices?: string[];
     speakerTones?: string[];
+    speakerNames?: string[];
     numSpeakers?: number;
 }
 
@@ -455,6 +460,7 @@ export async function POST(req: NextRequest) {
             geminiGuestVoice = DEFAULT_GUEST_VOICE,
             speakerVoices = [],
             speakerTones = [],
+            speakerNames = [],
             numSpeakers = 2
         }: RequestBody = await req.json();
 
@@ -556,7 +562,8 @@ export async function POST(req: NextRequest) {
             audioPath: `/generated_podcasts/${timestamp}_combined.${fileExtension}`,
             engine: 'gemini',
             format: fileExtension,
-            speakers_detected: 'Auto-detected from script'
+            speakers_detected: 'Auto-detected from script',
+            speakerNames: Array.isArray(speakerNames) ? speakerNames.slice(0, numSpeakers) : []
         }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }

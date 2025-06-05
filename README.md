@@ -31,6 +31,10 @@ HOST_DEFAULT_VOICE=Kore
 GUEST_DEFAULT_VOICE=Puck
 HOST_DEFAULT_TONE="Speak in a clear, professional tone."
 GUEST_DEFAULT_TONE="Speak in a natural, conversational tone."
+SPEAKER3_DEFAULT_VOICE=Charon
+SPEAKER4_DEFAULT_VOICE=Aoede
+SPEAKER3_DEFAULT_TONE=""
+SPEAKER4_DEFAULT_TONE=""
 ```
 
 ### Installation
