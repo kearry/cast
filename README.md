@@ -1,11 +1,9 @@
 # AI Podcast Generator
 
-A Next.js application that converts text scripts into podcast-style audio using AI voices from OpenAI and Google's Multi-Speaker TTS.
+A Next.js application that converts text scripts into podcast-style audio using Google's Multi-Speaker TTS.
 
 ## Features
 
-- **Dual TTS Engines**: Choose between OpenAI TTS and Google's Multi-Speaker TTS
-- **OpenAI TTS**: Individual speaker control with custom tones and 10 voice options
 - **Google Multi-Speaker TTS**: Natural conversation flow with seamless speaker transitions
 - Automatically identify speakers in the script
 - Process dialogue with special handling for actions/sound effects
@@ -13,15 +11,6 @@ A Next.js application that converts text scripts into podcast-style audio using 
 - Download generated podcasts as MP3/WAV files
 - Chatbot interface for AI personality conversations
 
-## TTS Engine Comparison
-
-| Feature | OpenAI TTS | Google Multi-Speaker TTS |
-|---------|------------|--------------------------|
-| Voice Quality | High quality, 10 voices | Natural conversation flow |
-| Speaker Control | Individual tone control | Automatic transitions |
-| Audio Formats | MP3, WAV, Opus, AAC, FLAC | MP3 |
-| Processing | Sequential segments | Single conversation |
-| Best For | Podcasts with distinct speakers | Natural dialogue |
 
 ## Getting Started
 
@@ -29,7 +18,6 @@ A Next.js application that converts text scripts into podcast-style audio using 
 
 - Node.js 16.x or later
 - npm or yarn
-- OpenAI API key (for OpenAI TTS)
 - Google API key (for Gemini Multi-Speaker TTS)
 
 ### Environment Setup
@@ -38,7 +26,6 @@ A Next.js application that converts text scripts into podcast-style audio using 
 2. Create a `.env.local` file in the root directory with the following variables:
 
 ```
-OPENAI_API_KEY=your_openai_api_key_here
 GOOGLE_API_KEY=your_google_api_key_here
 ```
 
@@ -62,9 +49,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 ### Podcast Generator
 
-1. **Choose TTS Engine**:
-   - **OpenAI TTS**: For individual speaker control and custom tones
-   - **Google Multi-Speaker TTS**: For natural conversation flow
+1. **Generate with Google Multi-Speaker TTS**
 
 2. **Enter your podcast script** in the text area
    - Format each line with the speaker name followed by a colon (e.g., "Host: Welcome to the show!")
@@ -73,11 +58,10 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 3. **Select the number of speakers (1–4)**
    - Gemini TTS supports a maximum of 2 speakers
 
-4. **Configure voices**:
-   - **OpenAI TTS**: Select voices and customize speaking tones
-   - **Google Multi-Speaker TTS**: Choose from 5 specialized conversation voices
+3. **Configure voices**:
+   - Choose from 5 specialized conversation voices
 
-5. **Generate and download** your podcast
+4. **Generate and download** your podcast
 
 ### Chatbot Interface
 
@@ -100,11 +84,6 @@ Guest: Simply put, it's the simulation of human intelligence by machines.
 
 ## Voice Options
 
-### OpenAI TTS Voices
-- Alloy (Neutral), Ash (Male), Ballad (Male)
-- Coral (Female), Echo (Male), Fable (Male)
-- Nova (Female), Onyx (Male), Sage (Male), Shimmer (Female)
-
 ### Google Multi-Speaker TTS Voices
 - Puck (Male, Youthful), Charon (Male, Mature)
 - Kore (Female, Young), Fenrir (Male, Mature), Aoede (Female, Mature)
@@ -114,7 +93,6 @@ Guest: Simply put, it's the simulation of human intelligence by machines.
 - **Frontend**: Next.js, React, Tailwind CSS
 - **API**: Next.js API routes
 - **Text-to-Speech**: 
-  - OpenAI TTS API (`gpt-4o-mini-tts`)
   - Google Gemini Multi-Speaker TTS (`gemini-2.0-flash-exp`)
 - **Audio Processing**: Buffer manipulation for combining audio segments
 - **Testing**: Jest with comprehensive API route testing

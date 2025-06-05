@@ -3,11 +3,7 @@ import { NextRequest } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
-
-// Limited OpenAI voice set for up to four speakers
-const OPENAI_VOICE_IDS = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'];
 
 // WAV header creation function for Gemini TTS PCM data
 function createWavBuffer(pcmData: Buffer, sampleRate = 24000, channels = 1, bitsPerSample = 16): Buffer {
@@ -40,11 +36,6 @@ function createWavBuffer(pcmData: Buffer, sampleRate = 24000, channels = 1, bits
 
     return Buffer.concat([header, pcmData]);
 }
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
 
 // Initialize Google Gemini client for TTS
 const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || '' });
@@ -116,105 +107,6 @@ function createBatches<T>(items: T[], maxBatchDuration: number, getItemDuration:
     return batches;
 }
 
-// OpenAI TTS function with batching
-async function generateWithOpenAI(
-    enhancedScript: string,
-    hostVoice: string,
-    hostTone: string,
-    guestVoice: string,
-    guestTone: string,
-    responseFormat: string,
-    numSpeakers: number,
-    onProgress?: (progress: string) => void
-): Promise<Buffer> {
-    const dialoguePieces = enhancedScript
-        .split('\n')
-        .filter((line: string) => line.trim() !== "" && line.includes(":"));
-
-    if (dialoguePieces.length === 0) {
-        dialoguePieces.push(`Host: ${enhancedScript}`);
-    }
-
-    // Determine unique speaker names and map to voices
-    const speakerNames: string[] = [];
-    dialoguePieces.forEach(piece => {
-        const [sp] = piece.split(":");
-        const name = sp.trim();
-        if (!speakerNames.includes(name)) speakerNames.push(name);
-    });
-    const speakerVoiceMap = new Map<string, string>();
-    speakerNames.forEach((name, idx) => {
-        if (idx < numSpeakers) {
-            speakerVoiceMap.set(name, OPENAI_VOICE_IDS[idx % OPENAI_VOICE_IDS.length]);
-        }
-    });
-
-    // Create batches with max 3-4 minutes per batch to stay well under API limits
-    const MAX_BATCH_DURATION = 200; // 3.33 minutes in seconds
-    const batches = createBatches(
-        dialoguePieces,
-        MAX_BATCH_DURATION,
-        (piece) => {
-            const [, ...textParts] = piece.split(":");
-            const text = textParts.join(":").trim().replace(/^\*\*\s+/, "");
-            return estimateDialogueDuration(text);
-        }
-    );
-
-    console.log(`Processing ${dialoguePieces.length} dialogue pieces in ${batches.length} batches`);
-
-    const generateAudioSegment = async (piece: string): Promise<Buffer> => {
-        const [speaker, ...textParts] = piece.split(":");
-        const text = textParts.join(":").trim().replace(/^\*\*\s+/, "");
-        const mappedVoice = speakerVoiceMap.get(speaker.trim()) || hostVoice;
-        const toneInstruction = mappedVoice === guestVoice ? guestTone : hostTone;
-
-        const openaiResponse = await openai.audio.speech.create({
-            model: "gpt-4o-mini-tts",
-            voice: mappedVoice,
-            input: text,
-            instructions: toneInstruction,
-            response_format: responseFormat as 'mp3' | 'wav' | 'opus' | 'aac' | 'flac',
-        });
-
-        const arrayBuffer = await openaiResponse.arrayBuffer();
-        return Buffer.from(arrayBuffer);
-    };
-
-    const batchAudioBuffers: Buffer[] = [];
-
-    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex];
-        onProgress?.(`Processing batch ${batchIndex + 1} of ${batches.length} (${batch.length} segments)...`);
-
-        try {
-            // Process all segments in the current batch
-            const batchSegments: Buffer[] = await Promise.all(
-                batch.map(generateAudioSegment)
-            );
-
-            // Combine segments in this batch
-            const batchAudio = Buffer.concat(batchSegments);
-            batchAudioBuffers.push(batchAudio);
-
-            console.log(`Completed batch ${batchIndex + 1}/${batches.length}, size: ${batchAudio.length} bytes`);
-
-            // Add a small delay between batches to avoid rate limiting
-            if (batchIndex < batches.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        } catch (error) {
-            console.error(`Error processing batch ${batchIndex + 1}:`, error);
-            throw new Error(`Failed to process batch ${batchIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-    }
-
-    onProgress?.('Combining all audio batches...');
-    const finalAudio = Buffer.concat(batchAudioBuffers);
-    console.log(`Final combined audio size: ${finalAudio.length} bytes`);
-
-    return finalAudio;
-}
 
 // Helper function to retry Gemini TTS calls with exponential backoff
 async function retryGeminiTTS(
@@ -538,12 +430,8 @@ async function generateWithGeminiTTS(
 
 interface RequestBody {
     text: string;
-    ttsEngine?: string;
-    hostVoice?: string;
     hostTone?: string;
-    guestVoice?: string;
     guestTone?: string;
-    responseFormat?: string;
     geminiHostVoice?: string;
     geminiGuestVoice?: string;
     numSpeakers?: number;
@@ -553,13 +441,8 @@ export async function POST(req: NextRequest) {
     try {
         const {
             text: enhancedScript,
-            ttsEngine = 'openai',
-            hostVoice = 'nova', // OpenAI default
             hostTone = '',
-            guestVoice = 'coral', // OpenAI default
             guestTone = '',
-            responseFormat = 'mp3',
-            // Gemini-specific voice defaults
             geminiHostVoice = 'Kore',
             geminiGuestVoice = 'Puck',
             numSpeakers = 2
@@ -572,22 +455,14 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        // Validate API keys
-        if (ttsEngine === 'openai' && !process.env.OPENAI_API_KEY) {
-            return new Response(JSON.stringify({ error: 'OpenAI API key is required for OpenAI TTS' }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
-        }
-
-        if (ttsEngine === 'gemini' && !process.env.GOOGLE_API_KEY) {
+        // Validate API key
+        if (!process.env.GOOGLE_API_KEY) {
             return new Response(JSON.stringify({ error: 'Google API key is required for Gemini TTS' }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' }
             });
         }
-
-        if (ttsEngine === 'gemini' && numSpeakers > 2) {
+        if (numSpeakers > 2) {
             return new Response(JSON.stringify({ error: 'Gemini TTS supports a maximum of 2 speakers' }), {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' }
@@ -602,42 +477,28 @@ export async function POST(req: NextRequest) {
             console.log(`[${timestamp}] ${progress}`);
         };
 
-        // Generate audio based on selected TTS engine
-        if (ttsEngine === 'gemini') {
-            combinedAudio = await generateWithGeminiTTS(
-                enhancedScript,
-                geminiHostVoice,
-                geminiGuestVoice,
-                hostTone, // Host style instructions
-                guestTone, // Guest style instructions
-                onProgress
-            );
-        } else {
-            combinedAudio = await generateWithOpenAI(
-                enhancedScript,
-                hostVoice,
-                hostTone,
-                guestVoice,
-                guestTone,
-                responseFormat,
-                numSpeakers,
-                onProgress
-            );
-        }
+        // Generate audio using Gemini TTS
+        combinedAudio = await generateWithGeminiTTS(
+            enhancedScript,
+            geminiHostVoice,
+            geminiGuestVoice,
+            hostTone,
+            guestTone,
+            onProgress
+        );
 
         // Save the audio file
         const generatedPodcastDir = path.join(process.cwd(), 'public', 'generated_podcasts');
         fs.mkdirSync(generatedPodcastDir, { recursive: true });
 
-        // Gemini TTS outputs WAV format (24kHz, 16-bit), OpenAI supports multiple formats
-        const fileExtension = ttsEngine === 'gemini' ? 'wav' : (responseFormat === 'wav' ? 'wav' : 'mp3');
+        // Gemini TTS outputs WAV format (24kHz, 16-bit)
+        const fileExtension = 'wav';
         const audioFilePath = path.join(generatedPodcastDir, `${timestamp}_combined.${fileExtension}`);
 
         console.log('Saving audio file:', {
             audioFilePath,
             bufferLength: combinedAudio.length,
             fileExtension,
-            ttsEngine
         });
 
         fs.writeFileSync(audioFilePath, combinedAudio);
@@ -664,9 +525,9 @@ export async function POST(req: NextRequest) {
             task_id: timestamp,
             script: enhancedScript,
             audioPath: `/generated_podcasts/${timestamp}_combined.${fileExtension}`,
-            engine: ttsEngine,
+            engine: 'gemini',
             format: fileExtension,
-            speakers_detected: ttsEngine === 'gemini' ? 'Auto-detected from script' : 'Individual processing'
+            speakers_detected: 'Auto-detected from script'
         }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }

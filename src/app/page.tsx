@@ -2,20 +2,6 @@
 import { useState } from 'react';
 import axios from 'axios';
 
-// Voice options for OpenAI TTS
-const OPENAI_VOICES = [
-  { id: 'alloy', name: 'Alloy (Neutral)' },
-  { id: 'ash', name: 'Ash (Male)' },
-  { id: 'ballad', name: 'Ballad (Male)' },
-  { id: 'coral', name: 'Coral (Female)' },
-  { id: 'echo', name: 'Echo (Male)' },
-  { id: 'fable', name: 'Fable (Male)' },
-  { id: 'nova', name: 'Nova (Female)' },
-  { id: 'onyx', name: 'Onyx (Male)' },
-  { id: 'sage', name: 'Sage (Male)' },
-  { id: 'shimmer', name: 'Shimmer (Female)' }
-];
-
 // Real Gemini TTS Voice Options (from official documentation)
 const GEMINI_VOICES = [
   { id: 'Zephyr', name: 'Zephyr (Bright)' },
@@ -50,20 +36,6 @@ const GEMINI_VOICES = [
   { id: 'Sulafar', name: 'Sulafar (Warm)' }
 ];
 
-// Audio format options (OpenAI only)
-const AUDIO_FORMATS = [
-  { id: 'mp3', name: 'MP3' },
-  { id: 'wav', name: 'WAV' },
-  { id: 'opus', name: 'Opus' },
-  { id: 'aac', name: 'AAC' },
-  { id: 'flac', name: 'FLAC' }
-];
-
-// TTS Engine options
-const TTS_ENGINES = [
-  { id: 'openai', name: 'OpenAI TTS (Individual Control)' },
-  { id: 'gemini', name: 'Google Gemini Multi-Speaker TTS (Natural Conversation)' }
-];
 
 export default function Home() {
   const [script, setScript] = useState('');
@@ -72,12 +44,6 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [processingStep, setProcessingStep] = useState<string | null>(null);
   const [exampleShown, setExampleShown] = useState(false);
-  const [audioFormat, setAudioFormat] = useState('mp3');
-  const [ttsEngine, setTtsEngine] = useState('openai');
-
-  // OpenAI settings
-  const [hostVoice, setHostVoice] = useState('nova');
-  const [guestVoice, setGuestVoice] = useState('coral');
 
   // Shared settings for tone/style (used differently by each engine)
   const [hostTone, setHostTone] = useState('Speak in a clear, professional tone.');
@@ -90,29 +56,8 @@ export default function Home() {
   // Number of speakers (1-4)
   const [numSpeakers, setNumSpeakers] = useState<number>(2);
 
-  // Get current voice options based on selected TTS engine
-  const getCurrentVoices = () => {
-    return ttsEngine === 'gemini' ? GEMINI_VOICES : OPENAI_VOICES;
-  };
-
-  // Handle TTS engine change
-  const handleEngineChange = (newEngine: string) => {
-    setTtsEngine(newEngine);
-    // Reset voices to defaults for the new engine
-    if (newEngine === 'gemini') {
-      setGeminiHostVoice('Kore');
-      setGeminiGuestVoice('Puck');
-      // Reset to style-focused instructions for Gemini
-      setHostTone('sound professional and authoritative');
-      setGuestTone('sound enthusiastic and knowledgeable');
-    } else {
-      setHostVoice('nova');
-      setGuestVoice('coral');
-      // Reset to tone-focused instructions for OpenAI
-      setHostTone('Speak in a clear, professional tone.');
-      setGuestTone('Speak in a natural, conversational tone.');
-    }
-  };
+  // Get current voice options (Gemini only)
+  const getCurrentVoices = () => GEMINI_VOICES;
 
   const showExample = () => {
     const exampleScript = `Host: Welcome to our podcast on AI and technology!
@@ -151,29 +96,18 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
         throw new Error('Failed to process script into dialogues');
       }
 
-      setProcessingStep(`Generating audio with ${ttsEngine === 'gemini' ? 'Google Gemini Multi-Speaker TTS' : 'OpenAI TTS'}...`);
+      setProcessingStep('Generating audio with Google Gemini Multi-Speaker TTS...');
       const enhancedScript = dialogues.map(d => `${d.speaker}: ${d.text}`).join('\n');
 
       // Prepare request data based on TTS engine
       const requestData: any = {
         text: enhancedScript,
-        ttsEngine,
-        responseFormat: audioFormat,
+        geminiHostVoice,
+        geminiGuestVoice,
+        hostTone,
+        guestTone,
         numSpeakers,
       };
-
-      if (ttsEngine === 'gemini') {
-        requestData.geminiHostVoice = geminiHostVoice;
-        requestData.geminiGuestVoice = geminiGuestVoice;
-        // For Gemini, we reuse hostTone and guestTone for individual speaker styles
-        requestData.hostTone = hostTone; // Host style instructions
-        requestData.guestTone = guestTone; // Guest style instructions
-      } else {
-        requestData.hostVoice = hostVoice;
-        requestData.hostTone = hostTone;
-        requestData.guestVoice = guestVoice;
-        requestData.guestTone = guestTone;
-      }
 
       // Generate audio
       const generateAudioResponse = await fetch('/api/generate-audio', {
@@ -221,7 +155,7 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
             Try Chatbot
           </a>
         </div>
-        <p className="text-gray-500 mb-6">Generate podcasts using OpenAI TTS or Google&apos;s Gemini 2.5 Multi-Speaker TTS</p>
+        <p className="text-gray-500 mb-6">Generate podcasts using Google&apos;s Gemini 2.5 Multi-Speaker TTS</p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
@@ -239,30 +173,7 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
             />
           </div>
 
-          {/* TTS Engine Selection */}
-          <div>
-            <label htmlFor="ttsEngine" className="block text-sm font-medium text-gray-700 mb-1">
-              Text-to-Speech Engine
-            </label>
-            <select
-              id="ttsEngine"
-              value={ttsEngine}
-              onChange={(e) => handleEngineChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              {TTS_ENGINES.map(engine => (
-                <option key={engine.id} value={engine.id}>
-                  {engine.name}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-sm text-gray-500">
-              {ttsEngine === 'gemini'
-                ? 'Gemini 2.5 TTS creates natural conversations with up to 2 speakers, 30 voice options, and 24 language support.'
-                : 'OpenAI TTS offers individual speaker control with custom tones and multiple audio formats.'
-              }
-          </p>
-        </div>
+
 
         {/* Number of Speakers */}
         <div>
@@ -292,8 +203,8 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
                 </label>
                 <select
                   id="hostVoice"
-                  value={ttsEngine === 'gemini' ? geminiHostVoice : hostVoice}
-                  onChange={(e) => ttsEngine === 'gemini' ? setGeminiHostVoice(e.target.value) : setHostVoice(e.target.value)}
+                  value={geminiHostVoice}
+                  onChange={(e) => setGeminiHostVoice(e.target.value)}
                   className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   {currentVoices.map(voice => (
@@ -304,27 +215,24 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
                 </select>
               </div>
 
-              {(ttsEngine === 'openai' || ttsEngine === 'gemini') && (
+              {
                 <div>
                   <label htmlFor="hostTone" className="block text-sm text-gray-600">
-                    {ttsEngine === 'gemini' ? 'Host Style Instructions' : 'Speaking Tone'}
+                    Host Style Instructions
                   </label>
                   <textarea
                     id="hostTone"
                     value={hostTone}
                     onChange={(e) => setHostTone(e.target.value)}
                     className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder={ttsEngine === 'gemini' ? 'sound professional and authoritative' : 'Speak in a clear, professional tone.'}
+                    placeholder="sound professional and authoritative"
                     rows={2}
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    {ttsEngine === 'gemini'
-                      ? 'How should the host speak? (professional, excited, calm, etc.)'
-                      : 'Example: "Speak in a cheerful and positive tone."'
-                    }
+                    How should the host speak? (professional, excited, calm, etc.)
                   </p>
                 </div>
-              )}
+              }
             </div>
 
             {/* Guest Voice Settings */}
@@ -336,8 +244,8 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
                 </label>
                 <select
                   id="guestVoice"
-                  value={ttsEngine === 'gemini' ? geminiGuestVoice : guestVoice}
-                  onChange={(e) => ttsEngine === 'gemini' ? setGeminiGuestVoice(e.target.value) : setGuestVoice(e.target.value)}
+                  value={geminiGuestVoice}
+                  onChange={(e) => setGeminiGuestVoice(e.target.value)}
                   className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   {currentVoices.map(voice => (
@@ -348,53 +256,27 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
                 </select>
               </div>
 
-              {(ttsEngine === 'openai' || ttsEngine === 'gemini') && (
+              {
                 <div>
                   <label htmlFor="guestTone" className="block text-sm text-gray-600">
-                    {ttsEngine === 'gemini' ? 'Guest Style Instructions' : 'Speaking Tone'}
+                    Guest Style Instructions
                   </label>
                   <textarea
                     id="guestTone"
                     value={guestTone}
                     onChange={(e) => setGuestTone(e.target.value)}
                     className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder={ttsEngine === 'gemini' ? 'sound enthusiastic and knowledgeable' : 'Speak in a natural, conversational tone.'}
+                    placeholder="sound enthusiastic and knowledgeable"
                     rows={2}
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    {ttsEngine === 'gemini'
-                      ? 'How should the guest speak? (enthusiastic, thoughtful, casual, etc.)'
-                      : 'Example: "Speak enthusiastically with occasional pauses."'
-                    }
+                    How should the guest speak? (enthusiastic, thoughtful, casual, etc.)
                   </p>
                 </div>
-              )}
+              }
             </div>
           </div>
 
-          {/* Audio Format (OpenAI only) */}
-          {ttsEngine === 'openai' && (
-            <div>
-              <label htmlFor="audioFormat" className="block text-sm font-medium text-gray-700 mb-1">
-                Audio Format
-              </label>
-              <select
-                id="audioFormat"
-                value={audioFormat}
-                onChange={(e) => setAudioFormat(e.target.value)}
-                className="w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                {AUDIO_FORMATS.map(format => (
-                  <option key={format.id} value={format.id}>
-                    {format.name}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-sm text-gray-500">
-                Gemini TTS outputs WAV format at 24kHz, 16-bit.
-              </p>
-            </div>
-          )}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -433,11 +315,9 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
           <div className="mt-4 p-3 bg-red-50 text-red-700 rounded">
             <p className="font-medium">Error</p>
             <p>{error}</p>
-            {ttsEngine === 'gemini' && (
-              <p className="mt-2 text-sm">
-                Note: Gemini 2.5 TTS is in preview. Ensure you have access to the Gemini API and the TTS models.
-              </p>
-            )}
+            <p className="mt-2 text-sm">
+              Note: Gemini 2.5 TTS is in preview. Ensure you have access to the Gemini API and the TTS models.
+            </p>
           </div>
         )}
 
@@ -466,18 +346,12 @@ Guest: That's a great point. With any powerful technology, we need thoughtful gu
             <li>Start each line of dialogue with the speaker&apos;s name followed by a colon (e.g., &quot;Host: Hello everyone&quot;).</li>
             <li>For sound effects or actions, use parentheses (e.g., &quot;Host: (laughs) That&apos;s a great point!&quot;).</li>
             <li><strong>Gemini TTS:</strong> Supports up to 2 speakers with natural conversation flow, individual style control, and automatic language detection.</li>
-            <li><strong>OpenAI TTS:</strong> Processes each speaker individually with custom tone control and multiple audio formats.</li>
             <li>Use individual style/tone instructions to control how each speaker sounds (professional vs casual, excited vs calm, etc.).</li>
           </ul>
         </div>
 
         <div className="mt-6 text-sm text-gray-500">
-          <p>
-            {ttsEngine === 'gemini'
-              ? 'Using Google Gemini 2.5 Flash Preview TTS with 30 voices and 24 languages.'
-              : 'Using OpenAI gpt-4o-mini-tts model with 10 voice options and 5 audio formats.'
-            }
-          </p>
+          <p>Using Google Gemini 2.5 Flash Preview TTS with 30 voices and 24 languages.</p>
         </div>
       </div>
     </div>
