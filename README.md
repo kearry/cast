@@ -27,6 +27,10 @@ A Next.js application that converts text scripts into podcast-style audio using 
 
 ```
 GOOGLE_API_KEY=your_google_api_key_here
+HOST_DEFAULT_VOICE=Kore
+GUEST_DEFAULT_VOICE=Puck
+HOST_DEFAULT_TONE="Speak in a clear, professional tone."
+GUEST_DEFAULT_TONE="Speak in a natural, conversational tone."
 ```
 
 ### Installation
