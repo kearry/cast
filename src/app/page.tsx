@@ -55,6 +55,54 @@ const GEMINI_VOICES = [
   { id: 'Sulafat', name: 'Sulafat (Warm)' }
 ];
 
+// Parse a script into dialogues (client-side version of server logic)
+function parseScript(script: string): { speaker: string; text: string }[] {
+  const dialogues: { speaker: string; text: string }[] = [];
+  const lines = script.split('\n');
+
+  let currentSpeaker = '';
+  let currentText = '';
+
+  const speakerRegex = /^\s*(?:\*\*)?([^:[\]()]+)(?:\*\*)?\s*[:|-]\s*(.*)$/;
+  const bracketRegex = /^\s*\[([^\]]+)\]\s*(.*)$/;
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+
+    const matchColon = line.match(speakerRegex);
+    const matchBracket = line.match(bracketRegex);
+    const match = matchColon || matchBracket;
+
+    if (match) {
+      if (currentSpeaker) {
+        dialogues.push({ speaker: currentSpeaker.trim(), text: currentText.trim() });
+      }
+      currentSpeaker = match[1].trim();
+      currentText = match[2];
+    } else if (currentSpeaker) {
+      const isStageDirection = line.trim().startsWith('(') && line.trim().endsWith(')');
+      if (isStageDirection) {
+        currentText += ' ' + line.trim();
+      } else {
+        currentText += (currentText ? ' ' : '') + line.trim();
+      }
+    } else {
+      currentSpeaker = 'Narrator';
+      currentText = line.trim();
+    }
+  }
+
+  if (currentSpeaker) {
+    dialogues.push({ speaker: currentSpeaker.trim(), text: currentText.trim() });
+  }
+
+  if (dialogues.length === 0 && script.trim()) {
+    dialogues.push({ speaker: 'Narrator', text: script.trim() });
+  }
+
+  return dialogues;
+}
+
 
 export default function Home() {
   const [script, setScript] = useState('');
@@ -97,6 +145,27 @@ export default function Home() {
       return updated;
     });
   }, [numSpeakers]);
+
+  // Auto-detect speakers from the script and update fields
+  useEffect(() => {
+    if (!script.trim()) return;
+
+    const dialogues = parseScript(script);
+    const uniqueNames = Array.from(new Set(dialogues.map(d => d.speaker.trim()))).slice(0, 4);
+    if (uniqueNames.length === 0) return;
+
+    setHostName(uniqueNames[0] || DEFAULT_HOST_NAME);
+    if (uniqueNames.length > 1) setGuestName(uniqueNames[1]);
+
+    const extras = uniqueNames.slice(2).map((name, idx) => ({
+      name,
+      voice: extraSpeakers[idx]?.voice || (idx === 0 ? DEFAULT_SPEAKER3_VOICE : DEFAULT_SPEAKER4_VOICE),
+      tone: extraSpeakers[idx]?.tone || (idx === 0 ? DEFAULT_SPEAKER3_TONE : DEFAULT_SPEAKER4_TONE),
+    }));
+
+    setExtraSpeakers(extras);
+    setNumSpeakers(uniqueNames.length);
+  }, [script]);
 
   const updateExtraSpeaker = (
     index: number,
