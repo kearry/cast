@@ -39,8 +39,8 @@ function parseScript(script: string): { speaker: string; text: string }[] {
     // Improved regex to handle various script formats
     // This handles formats like "Speaker: Text", "Speaker - Text", "[Speaker] Text", etc.
     const speakerRegex = /^\s*(?:\*\*)?([^:[\]()]+)(?:\*\*)?\s*:\s*(.*)$/;
-    // Alternative regex for bracket format: [Speaker] Text
-    const bracketRegex = /^\s*\[([^\]]+)\]\s*(.*)$/;
+    // Alternative regex for bracket format: [Speaker] Text (requires text after bracket)
+    const bracketRegex = /^\s*\[([^\]]+)\]\s+(.+)$/;
 
     for (const line of lines) {
         // Skip empty lines
@@ -52,21 +52,35 @@ function parseScript(script: string): { speaker: string; text: string }[] {
         const match = matchColon || matchBracket;
 
         if (match) {
-            // If we already have a speaker, add the current dialogue to results
-            if (currentSpeaker) {
-                dialogues.push({
-                    speaker: currentSpeaker.trim(),
-                    text: currentText.trim()
-                });
-            }
+            const candidateSpeaker = match[1].trim();
+            const candidateText = match[2].trim();
+            const startsWithNumber = /^[0-9£$]/.test(candidateText);
+            const isLikelySpeaker =
+                candidateText.length > 0 &&
+                candidateSpeaker.split(/\s+/).length <= 3 &&
+                !startsWithNumber;
 
-            // Start a new dialogue
-            currentSpeaker = match[1].trim();
-            currentText = match[2];
-        } else if (currentSpeaker) {
+            if (isLikelySpeaker) {
+                if (currentSpeaker) {
+                    dialogues.push({
+                        speaker: currentSpeaker.trim(),
+                        text: currentText.trim(),
+                    });
+                }
+
+                currentSpeaker = candidateSpeaker;
+                currentText = candidateText;
+                continue;
+            }
+        }
+
+        if (currentSpeaker) {
             // This is a continuation of the current dialogue
             // Don't add newlines for stage directions
-            const isStageDirection = line.trim().startsWith('(') && line.trim().endsWith(')');
+            const trimmed = line.trim();
+            const isStageDirection =
+                (trimmed.startsWith('(') && trimmed.endsWith(')')) ||
+                (trimmed.startsWith('[') && trimmed.endsWith(']'));
 
             if (isStageDirection) {
                 // For stage directions, add them inline
