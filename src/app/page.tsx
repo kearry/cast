@@ -63,7 +63,7 @@ function parseScript(script: string): { speaker: string; text: string }[] {
   let currentSpeaker = '';
   let currentText = '';
 
-  const speakerRegex = /^\s*(?:\*\*)?([^:[\]()]+)(?:\*\*)?\s*[:|-]\s*(.*)$/;
+  const speakerRegex = /^\s*(?:\*\*)?([^:[\]()]+)(?:\*\*)?\s*:\s*(.*)$/;
   const bracketRegex = /^\s*\[([^\]]+)\]\s*(.*)$/;
 
   for (const line of lines) {
