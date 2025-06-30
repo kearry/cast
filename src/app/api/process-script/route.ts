@@ -38,7 +38,7 @@ function parseScript(script: string): { speaker: string; text: string }[] {
 
     // Improved regex to handle various script formats
     // This handles formats like "Speaker: Text", "Speaker - Text", "[Speaker] Text", etc.
-    const speakerRegex = /^\s*(?:\*\*)?([^:[\]()]+)(?:\*\*)?\s*[:|-]\s*(.*)$/;
+    const speakerRegex = /^\s*(?:\*\*)?([^:[\]()]+)(?:\*\*)?\s*:\s*(.*)$/;
     // Alternative regex for bracket format: [Speaker] Text
     const bracketRegex = /^\s*\[([^\]]+)\]\s*(.*)$/;
 
