@@ -63,39 +63,66 @@ function parseScript(script: string): { speaker: string; text: string }[] {
   let currentSpeaker = '';
   let currentText = '';
 
+  // Improved regex to handle various script formats
   const speakerRegex = /^\s*(?:\*\*)?([^:[\]()]+)(?:\*\*)?\s*:\s*(.*)$/;
-  const bracketRegex = /^\s*\[([^\]]+)\]\s*(.*)$/;
+  // Alternative regex for bracket format: [Speaker] Text (requires text after bracket)
+  const bracketRegex = /^\s*\[([^\]]+)\]\s+(.+)$/;
 
   for (const line of lines) {
+    // Skip empty lines
     if (!line.trim()) continue;
 
+    // Try different speaker formats
     const matchColon = line.match(speakerRegex);
     const matchBracket = line.match(bracketRegex);
     const match = matchColon || matchBracket;
 
     if (match) {
-      if (currentSpeaker) {
-        dialogues.push({ speaker: currentSpeaker.trim(), text: currentText.trim() });
+      const candidateSpeaker = match[1].trim();
+      const candidateText = match[2].trim();
+      const startsWithNumber = /^[0-9£$]/.test(candidateText);
+      const isLikelySpeaker =
+        candidateText.length > 0 &&
+        candidateSpeaker.split(/\s+/).length <= 3 &&
+        !startsWithNumber;
+
+      if (isLikelySpeaker) {
+        if (currentSpeaker) {
+          dialogues.push({ speaker: currentSpeaker.trim(), text: currentText.trim() });
+        }
+        currentSpeaker = candidateSpeaker;
+        currentText = candidateText;
+        continue;
       }
-      currentSpeaker = match[1].trim();
-      currentText = match[2];
-    } else if (currentSpeaker) {
-      const isStageDirection = line.trim().startsWith('(') && line.trim().endsWith(')');
+    }
+
+    if (currentSpeaker) {
+      // This is a continuation of the current dialogue
+      const trimmed = line.trim();
+      const isStageDirection =
+        (trimmed.startsWith('(') && trimmed.endsWith(')')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'));
+
       if (isStageDirection) {
+        // For stage directions, add them inline
         currentText += ' ' + line.trim();
       } else {
+        // For regular text continuation, preserve paragraphs with spaces
         currentText += (currentText ? ' ' : '') + line.trim();
       }
     } else {
+      // If there's no current speaker but we have text, treat it as narrator
       currentSpeaker = 'Narrator';
       currentText = line.trim();
     }
   }
 
+  // Add the last dialogue if there is one
   if (currentSpeaker) {
     dialogues.push({ speaker: currentSpeaker.trim(), text: currentText.trim() });
   }
 
+  // If no dialogues were found, create one with the entire script as narrator
   if (dialogues.length === 0 && script.trim()) {
     dialogues.push({ speaker: 'Narrator', text: script.trim() });
   }
